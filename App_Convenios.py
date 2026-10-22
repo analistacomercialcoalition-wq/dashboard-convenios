@@ -145,11 +145,18 @@ def cargar_datos_corporativos():
         df_metas = pd.read_csv(sheet_url_metas, dtype=str)
         df_metas.columns = df_metas.columns.str.strip()
         
-        # Corrección de columnas duplicadas
-        cols = pd.Series(df_metas.columns)
-        for dup in cols[cols.duplicated()].unique():
-            cols[cols[cols == dup].index.values.tolist()] = [dup + f'_{i}' if i != 0 else dup for i in range(sum(cols == dup))]
-        df_metas.columns = cols
+        # ELIMINAR O RENOMBRAR COLUMNAS DUPLICADAS AUTOMÁTICAMENTE
+        nuevas_cols = []
+        contador_cols = {}
+        for c in df_metas.columns:
+            c_limpia = c if c != "" and not c.startswith("Unnamed") else "Columna_Vacia"
+            if c_limpia in contador_cols:
+                contador_cols[c_limpia] += 1
+                nuevas_cols.append(f"{c_limpia}_{contador_cols[c_limpia]}")
+            else:
+                contador_cols[c_limpia] = 0
+                nuevas_cols.append(c_limpia)
+        df_metas.columns = nuevas_cols
 
         # Renombrar encabezados específicos de metas solicitado por Luigi
         nuevos_nombres = {}
