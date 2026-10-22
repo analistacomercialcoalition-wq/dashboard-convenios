@@ -151,7 +151,7 @@ def obtener_opciones_limpias(df_in, col_name):
     return []
 
 # ==========================================
-# 2. SISTEMA DE AUTENTICACIÓN Y SEGURIDAD (CAMPOS VACÍOS)
+# 2. SISTEMA DE AUTENTICACIÓN Y SEGURIDAD (SOLO LUIGI SOCCA)
 # ==========================================
 if logo_encontrado:
     st.sidebar.image(logo_encontrado, use_column_width=True)
@@ -160,15 +160,11 @@ st.sidebar.markdown("<h2 style='color: #D97706; text-align: center;'>CONVENIOS C
 st.sidebar.markdown("---")
 st.sidebar.subheader("🔐 Credenciales de Acceso")
 
-# Base de datos segura de usuarios corporativos y contraseñas
+# Base de datos restringida exclusivamente a Luigi Socca
 CREDENCIALES_USUARIOS = {
     "luigi.socca@coalition.com.pe": {
         "password": "45775003",
         "territorial": "TODAS"
-    },
-    "enrique.ciudad@coalition.com.pe": {
-        "password": "12345678",
-        "territorial": "ENRIQUE CIUDAD"
     }
 }
 
