@@ -95,7 +95,7 @@ st.markdown("---")
 # ==========================================
 @st.cache_data(ttl=600)
 def cargar_datos_corporativos():
-    # Matriz Principal de Operaciones
+    # Matriz Principal de Operaciones (Hoja 1)
     sheet_url = "https://docs.google.com/spreadsheets/d/1IBvyIN5H1jYrwEAOD9E5nTCpaBLqxD109HMKCW0Ezt8/gviz/tq?tqx=out:csv&sheet=Hoja%201"
     df = pd.read_csv(sheet_url, dtype=str)
     df.columns = df.columns.str.strip()
@@ -139,16 +139,24 @@ def cargar_datos_corporativos():
     df['ID_UNICO'] = df[cols_id[0]].astype(str).str.strip() if cols_id else df.index.astype(str)
     df = df.drop_duplicates(subset=['ID_UNICO', 'AÑO_MES_SOLICITUD'], keep='first')
 
-    # Carga de la pestaña original REPORTE VENTA j Jefe con corrección de duplicados
-    sheet_url_metas = "https://docs.google.com/spreadsheets/d/1IBvyIN5H1jYrwEAOD9E5nTCpaBLqxD109HMKCW0Ezt8/gviz/tq?tqx=out:csv&sheet=REPORTE%20VENTA%20j%20Jefe"
+    # Carga de la pestaña REPORTE VENTA (Vista completa de ventas)
+    sheet_url_venta = "https://docs.google.com/spreadsheets/d/1IBvyIN5H1jYrwEAOD9E5nTCpaBLqxD109HMKCW0Ezt8/gviz/tq?tqx=out:csv&sheet=Reporte%20Venta"
     try:
-        df_metas = pd.read_csv(sheet_url_metas, dtype=str)
-        df_metas.columns = df_metas.columns.str.strip()
+        df_reporte_venta = pd.read_csv(sheet_url_venta, dtype=str)
+        df_reporte_venta.columns = df_reporte_venta.columns.str.strip()
+    except Exception:
+        df_reporte_venta = pd.DataFrame()
+
+    # Carga de la pestaña REPORTE VENTA j Jefe (Vista de Jefes y Metas)
+    sheet_url_jefe = "https://docs.google.com/spreadsheets/d/1IBvyIN5H1jYrwEAOD9E5nTCpaBLqxD109HMKCW0Ezt8/gviz/tq?tqx=out:csv&sheet=REPORTE%20VENTA%20j%20Jefe"
+    try:
+        df_reporte_jefe = pd.read_csv(sheet_url_jefe, dtype=str)
+        df_reporte_jefe.columns = df_reporte_jefe.columns.str.strip()
         
         # Eliminar duplicados en encabezados automáticamente
         nuevas_cols = []
         contador_cols = {}
-        for c in df_metas.columns:
+        for c in df_reporte_jefe.columns:
             c_limpia = c if c != "" and not c.startswith("Unnamed") else "Columna_Vacia"
             if c_limpia in contador_cols:
                 contador_cols[c_limpia] += 1
@@ -156,26 +164,26 @@ def cargar_datos_corporativos():
             else:
                 contador_cols[c_limpia] = 0
                 nuevas_cols.append(c_limpia)
-        df_metas.columns = nuevas_cols
+        df_reporte_jefe.columns = nuevas_cols
 
-        # Renombrar los encabezados de metas específicos solicitados
+        # Renombrar los encabezados solicitados
         nuevos_nombres = {}
-        for col in df_metas.columns:
+        for col in df_reporte_jefe.columns:
             col_upper = col.upper()
             if 'META' in col_upper and 'OPERACION' in col_upper:
                 nuevos_nombres[col] = 'Meta de operaciones'
             elif 'META' in col_upper and 'OCTUBRE' in col_upper:
                 nuevos_nombres[col] = 'Meta de monto'
         
-        df_metas = df_metas.rename(columns=nuevos_nombres)
+        df_reporte_jefe = df_reporte_jefe.rename(columns=nuevos_nombres)
         
     except Exception:
-        df_metas = pd.DataFrame()
+        df_reporte_jefe = pd.DataFrame()
     
-    return df, df_metas
+    return df, df_reporte_venta, df_reporte_jefe
 
-with st.spinner("Sincronizando matriz corporativa y reporte de ventas..."):
-    df_base, df_metas = cargar_datos_corporativos()
+with st.spinner("Sincronizando matriz corporativa y reportes desde Google Sheets..."):
+    df_base, df_reporte_venta, df_reporte_jefe = cargar_datos_corporativos()
 
 def obtener_opciones_limpias(df_in, col_name):
     if col_name in df_in.columns:
@@ -339,14 +347,15 @@ df_mensual = df_flt_prod.groupby('AÑO_MES_DESEMBOLSO').agg(
 ).reset_index() if not df_flt_prod.empty else pd.DataFrame()
 
 # ==========================================
-# 4. ESTRUCTURA DE PESTAÑAS
+# 4. ESTRUCTURA DE PESTAÑAS (INCLUYE REPORTE VENTA Y REPORTE JEFE)
 # ==========================================
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "📊 Producción Total por Mes", 
     "📦 Remesas (Volumen por Fecha de Solicitud)", 
     "🏆 Red Comercial & Ranking", 
-    "🎯 Reporte Venta j Jefe",
-    "🎲 Monte Carlo (Estacionalidad Convenios Perú)"
+    "📑 Reporte Venta",
+    "👔 Reporte Jefe",
+    "🎲 Monte Carlo (Estacionalidad Perú)"
 ])
 
 # --- PESTAÑA 1: PRODUCCIÓN ---
@@ -448,18 +457,26 @@ with tab3:
             fig_jefe.update_layout(template="plotly_white")
             st.plotly_chart(fig_jefe, use_container_width=True)
 
-# --- PESTAÑA 4: REPORTE VENTA J JEFE ---
+# --- PESTAÑA 4: REPORTE VENTA ---
 with tab4:
-    st.subheader("🎯 Reporte Venta j Jefe (Vista Completa de la Pestaña)")
-    st.markdown("Visualización completa de la información extraída de la pestaña **REPORTE VENTA j Jefe** con los campos de metas actualizados.")
-    
-    if not df_metas.empty:
-        st.dataframe(df_metas, use_container_width=True)
+    st.subheader("📑 Pestaña: Reporte Venta (Vista Completa)")
+    st.markdown("Visualización íntegra de la información extraída de la pestaña **Reporte Venta**.")
+    if not df_reporte_venta.empty:
+        st.dataframe(df_reporte_venta, use_container_width=True)
     else:
-        st.info("No se encontró información o la pestaña 'REPORTE VENTA j Jefe' está vacía o pendiente de sincronizar.")
+        st.info("No se encontró información en la pestaña 'Reporte Venta'.")
 
-# --- PESTAÑA 5: MONTE CARLO ---
+# --- PESTAÑA 5: REPORTE JEFE ---
 with tab5:
+    st.subheader("👔 Pestaña: Reporte Venta j Jefe (Vista Completa)")
+    st.markdown("Visualización íntegra de la pestaña de Jefes con las columnas de metas actualizadas.")
+    if not df_reporte_jefe.empty:
+        st.dataframe(df_reporte_jefe, use_container_width=True)
+    else:
+        st.info("No se encontró información en la pestaña 'REPORTE VENTA j Jefe'.")
+
+# --- PESTAÑA 6: MONTE CARLO ---
+with tab6:
     st.subheader("🎲 Motor Estocástico Monte Carlo (100,000 Escenarios - Convenios Perú)")
     st.markdown("Proyección basada en el **promedio mensual histórico real** de la matriz, calibrada con la sensibilidad de créditos por planilla (Picos en Noviembre, Diciembre y Julio).")
 
