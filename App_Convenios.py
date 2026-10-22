@@ -44,7 +44,7 @@ def cargar_datos_corporativos():
     # Limpieza de Fecha de Desembolso
     df['FECHA_DT'] = pd.to_datetime(df['FECHA DE DESEMBOLSO'], format='%d/%m/%Y', errors='coerce')
     
-    # Buscar columna exacta de Fecha de Solicitud
+    # Buscar columna de Fecha de Solicitud
     col_solicitud = [c for c in df.columns if 'SOLICITUD' in c.upper()]
     if col_solicitud:
         df['FECHA_SOLICITUD_DT'] = pd.to_datetime(df[col_solicitud[0]], format='%d/%m/%Y', errors='coerce')
@@ -56,7 +56,7 @@ def cargar_datos_corporativos():
     df['AÑO_MES'] = df['FECHA_DT'].dt.to_period('M').astype(str)
     df['FECHA_CORTE'] = df['FECHA_DT'].dt.date
     
-    # Atributos puros de Fecha de Solicitud para Remesas
+    # Atributos específicos para Remesas (Fecha de Solicitud)
     df['AÑO_MES_SOLICITUD'] = df['FECHA_SOLICITUD_DT'].dt.to_period('M').astype(str)
     df['FECHA_SOLICITUD_CORTE'] = df['FECHA_SOLICITUD_DT'].dt.date
     
@@ -104,10 +104,11 @@ if sel_asesor != "TODOS":
 st.markdown("### 🎛️ Filtros de Control Temporal y Estado")
 f_col1, f_col2, f_col3 = st.columns(3)
 
+# Rango amplio por defecto
+min_f = df_flt['FECHA_CORTE'].dropna().min() if not df_flt.empty else datetime(2020, 1, 1).date()
+max_f = df_flt['FECHA_CORTE'].dropna().max() if not df_flt.empty else datetime.today().date()
+
 with f_col1:
-    min_f = df_flt['FECHA_CORTE'].dropna().min() if not df_flt.empty else datetime.today().date()
-    max_f = df_flt['FECHA_CORTE'].dropna().max() if not df_flt.empty else datetime.today().date()
-    
     rango_fechas = st.date_input(
         "📅 Rango Fecha de Referencia",
         value=(min_f, max_f),
@@ -118,20 +119,21 @@ with f_col1:
 with f_col2:
     estados_disp = sorted(list(df_flt['ESTADO'].dropna().unique())) if not df_flt.empty else []
     sel_estados = st.multiselect(
-        "📌 Estado de Operación (Filtro para Producción)", 
+        "📌 Estado de Operación (Para Producción)", 
         options=estados_disp, 
-        default=["DESEMBOLSADO"] if "DESEMBOLSADO" in estados_disp else estados_disp
+        default=[] # En blanco para no restringir inicialmente
     )
 
 with f_col3:
-    meses_disp = sorted(list(df_flt['AÑO_MES_SOLICITUD'].dropna().unique())) if not df_flt.empty else []
+    # Obtener la lista completa de meses ordenados por fecha de solicitud
+    meses_sol_disp = sorted([m for m in df_flt['AÑO_MES_SOLICITUD'].dropna().unique() if m != 'NaT']) if not df_flt.empty else []
     sel_meses = st.multiselect(
         "🗓️ Meses Específicos de Solicitud", 
-        options=meses_disp, 
-        default=meses_disp
+        options=meses_sol_disp, 
+        default=[] # En blanco para mostrar TODOS los meses por defecto
     )
 
-# --- FILTRADO PARA PESTAÑA PRODUCCIÓN (BASADO EN FECHA DESEMBOLSO Y ESTADO) ---
+# --- FILTRADO PARA PESTAÑA PRODUCCIÓN ---
 df_flt_prod = df_flt.copy()
 
 if isinstance(rango_fechas, (list, tuple)) and len(rango_fechas) == 2:
@@ -144,13 +146,22 @@ if sel_estados:
 if sel_meses:
     df_flt_prod = df_flt_prod[df_flt_prod['AÑO_MES'].isin(sel_meses)]
 
-# --- FILTRADO PURO PARA PESTAÑA REMESAS (SOLO FECHA DE SOLICITUD Y MESES SOLICITADOS) ---
+# --- FILTRADO PARA PESTAÑA REMESAS (REMESAS COMPLETAS) ---
 df_remesas = df_flt.copy()
 
-# Solo tomar registros que tengan FECHA DE SOLICITUD válida
-df_remesas = df_remesas[df_remesas['FECHA_SOLICITUD_DT'].notna()]
+# Aplicar rango de fechas de solicitud si el usuario seleccionó un rango específico
+if isinstance(rango_fechas, (list, tuple)) and len(rango_fechas) == 2:
+    f_ini, f_fin = rango_fechas
+    df_remesas = df_remesas[
+        (df_remesas['FECHA_SOLICITUD_CORTE'] >= f_ini) & 
+        (df_remesas['FECHA_SOLICITUD_CORTE'] <= f_fin)
+    ]
 
-# Filtrar por los meses de solicitud seleccionados arriba (o todos si no hay selección)
+# Filtrar por estados si el usuario seleccionó alguno en el multiselect
+if sel_estados:
+    df_remesas = df_remesas[df_remesas['ESTADO'].isin(sel_estados)]
+
+# Filtrar por meses de solicitud si el usuario seleccionó alguno
 if sel_meses:
     df_remesas = df_remesas[df_remesas['AÑO_MES_SOLICITUD'].isin(sel_meses)]
 
@@ -216,10 +227,10 @@ with tab1:
     else:
         st.info("No se encontraron registros con los filtros seleccionados.")
 
-# --- PESTAÑA 2: REMESAS (PURA FECHA DE SOLICITUD) ---
+# --- PESTAÑA 2: REMESAS (TODOS LOS MESES POR FECHA DE SOLICITUD) ---
 with tab2:
-    st.subheader("📦 Conteo Real de Remesas Ingresadas por Mes de Solicitud")
-    st.markdown("Se cuantifican **todas las solicitudes registradas** según su **Fecha de Solicitud**, independientemente del estado final o desembolso.")
+    st.subheader("📦 Conteo Completo de Remesas Ingresadas por Mes de Solicitud")
+    st.markdown("Conteo de **todas las solicitudes registradas** según su **Fecha de Solicitud** a lo largo de todo el histórico.")
 
     rem_total_ops = len(df_remesas)
     rem_dias_sol = df_remesas['FECHA_SOLICITUD_CORTE'].nunique() if not df_remesas.empty else 0
@@ -242,22 +253,25 @@ with tab2:
             df_rem_mensual = df_remesas.groupby('AÑO_MES_SOLICITUD').agg(
                 CANTIDAD_SOLICITUDES=('FECHA_SOLICITUD_DT', 'count'),
                 MONTO_SOLICITADO=('NETO', 'sum')
-            ).reset_index()
+            ).reset_index().sort_values('AÑO_MES_SOLICITUD')
+
+            # Filtrar valores nulos o inválidos
+            df_rem_mensual = df_rem_mensual[df_rem_mensual['AÑO_MES_SOLICITUD'] != 'NaT']
 
             fig_rem_bar = px.bar(
                 df_rem_mensual,
                 x='AÑO_MES_SOLICITUD',
                 y='CANTIDAD_SOLICITUDES',
                 text='CANTIDAD_SOLICITUDES',
-                title="Conteo Exacto de Remesas por Mes de Solicitud",
+                title="Evolución Histórica de Remesas por Mes de Solicitud",
                 labels={'AÑO_MES_SOLICITUD': 'Mes de Solicitud', 'CANTIDAD_SOLICITUDES': 'N° de Solicitudes'},
                 color_discrete_sequence=['#0d9488']
             )
             fig_rem_bar.update_traces(texttemplate='%{text:,} Ops', textposition='outside')
-            fig_rem_bar.update_layout(height=450)
+            fig_rem_bar.update_layout(height=450, xaxis_tickangle=-45)
             st.plotly_chart(fig_rem_bar, use_container_width=True)
         else:
-            st.info("No hay remesas registradas para los meses seleccionados.")
+            st.info("No hay remesas registradas para el filtro seleccionado.")
 
     with col_r2:
         if not df_remesas.empty:
@@ -267,7 +281,7 @@ with tab2:
                 df_est,
                 names='ESTADO',
                 values='CANTIDAD',
-                title="Estado Final de las Solicitudes del Periodo",
+                title="Estado Final de las Solicitudes",
                 hole=0.4,
                 color_discrete_sequence=px.colors.qualitative.Set2
             )
