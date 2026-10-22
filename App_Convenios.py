@@ -26,41 +26,44 @@ st.markdown("### **Coalition Group — Matriz de Colocaciones, Remesas y Proyecc
 st.markdown("---")
 
 # ==========================================
-# 1. CARGA Y PARSEO ROBUSTO DE DATO (SIN PERDER NINGUNA FILA)
+# 1. CARGA Y LIMPIEZA STRICTA DD/MM/YYYY
 # ==========================================
 @st.cache_data(ttl=600)
 def cargar_datos_corporativos():
     sheet_url = "https://docs.google.com/spreadsheets/d/1IBvyIN5H1jYrwEAOD9E5nTCpaBLqxD109HMKCW0Ezt8/gviz/tq?tqx=out:csv&sheet=Hoja%201"
-    df = pd.read_csv(sheet_url, dtype=str) # Cargar todo como string inicial para no perder nada
+    df = pd.read_csv(sheet_url, dtype=str)
     df.columns = df.columns.str.strip()
     
-    # Clean NETO
+    # Limpieza de NETO
     df['NETO'] = pd.to_numeric(
         df['NETO'].astype(str).str.replace(',', '').str.replace('S/', '').str.replace(' ', '').str.strip(), 
         errors='coerce'
     ).fillna(0)
 
-    # Función ultra robusta para obtener Año-Mes de cualquier texto de fecha
-    def extraer_ano_mes(val):
-        if pd.isna(val) or not str(val).strip():
-            return 'DESCONOCIDO'
-        val_str = str(val).strip().split(' ')[0] # Quitar hora si tuviera
-        partes = val_str.replace('-', '/').split('/')
-        if len(partes) == 3:
-            # Asumir DD/MM/YYYY
-            dia, mes, ano = partes[0].zfill(2), partes[1].zfill(2), partes[2]
-            if len(ano) == 2:
-                ano = '20' + ano
-            return f"{ano}-{mes}"
-        return 'DESCONOCIDO'
-
-    # Extracción de Año-Mes
-    df['AÑO_MES_DESEMBOLSO'] = df['FECHA DE DESEMBOLSO'].apply(extraer_ano_mes)
-    df['AÑO_MES_SOLICITUD'] = df['FECHA DE SOLICITUD'].apply(extraer_ano_mes)
+    # 1. Parseo estricto de FECHA DE SOLICITUD (Formato Peruano DD/MM/YYYY)
+    df['FECHA_SOLICITUD_DT'] = pd.to_datetime(df['FECHA DE SOLICITUD'], format='%d/%m/%Y', errors='coerce')
     
-    # Fechas Datetime secundarias para ordenamiento
-    df['FECHA_DESEMBOLSO_DT'] = pd.to_datetime(df['FECHA DE DESEMBOLSO'], dayfirst=True, errors='coerce')
-    df['FECHA_SOLICITUD_DT'] = pd.to_datetime(df['FECHA DE SOLICITUD'], dayfirst=True, errors='coerce')
+    # Si alguna fecha falló por venir con guiones o sin ceros a la izquierda
+    mask_null_sol = df['FECHA_SOLICITUD_DT'].isna() & df['FECHA DE SOLICITUD'].notna()
+    if mask_null_sol.any():
+        df.loc[mask_null_sol, 'FECHA_SOLICITUD_DT'] = pd.to_datetime(
+            df.loc[mask_null_sol, 'FECHA DE SOLICITUD'], dayfirst=True, errors='coerce'
+        )
+
+    df['AÑO_MES_SOLICITUD'] = df['FECHA_SOLICITUD_DT'].dt.to_period('M').astype(str)
+
+    # 2. Parseo estricto de FECHA DE DESEMBOLSO (DD/MM/YYYY)
+    df['FECHA_DESEMBOLSO_DT'] = pd.to_datetime(df['FECHA DE DESEMBOLSO'], format='%d/%m/%Y', errors='coerce')
+    mask_null_des = df['FECHA_DESEMBOLSO_DT'].isna() & df['FECHA DE DESEMBOLSO'].notna()
+    if mask_null_des.any():
+        df.loc[mask_null_des, 'FECHA_DESEMBOLSO_DT'] = pd.to_datetime(
+            df.loc[mask_null_des, 'FECHA DE DESEMBOLSO'], dayfirst=True, errors='coerce'
+        )
+
+    df['AÑO_MES_DESEMBOLSO'] = df['FECHA_DESEMBOLSO_DT'].dt.to_period('M').astype(str)
+
+    # Eliminar filas vacías que no corresponden a operaciones reales
+    df = df[df['FECHA_SOLICITUD_DT'].notna()]
     
     return df
 
@@ -73,20 +76,20 @@ with st.spinner("Sincronizando base de datos corporativa completa..."):
 st.sidebar.header("🔍 Panel de Filtros y Control")
 st.sidebar.subheader("🏢 Estructura Comercial")
 
-zonas = ["TODAS"] + sorted([x for x in df_base['ZONA'].dropna().unique() if x != 'nan'])
+zonas = ["TODAS"] + sorted([x for x in df_base['ZONA'].dropna().unique() if str(x).strip() != ''])
 sel_zona = st.sidebar.selectbox("Zona", zonas)
 
-plazas = ["TODAS"] + sorted([x for x in df_base['PLAZA'].dropna().unique() if x != 'nan'])
+plazas = ["TODAS"] + sorted([x for x in df_base['PLAZA'].dropna().unique() if str(x).strip() != ''])
 sel_plaza = st.sidebar.selectbox("Plaza", plazas)
 
 col_jefe_nom = 'JDN' if 'JDN' in df_base.columns else 'JEFE ZONAL'
-jefes = ["TODOS"] + sorted([x for x in df_base[col_jefe_nom].dropna().unique() if x != 'nan'])
+jefes = ["TODOS"] + sorted([x for x in df_base[col_jefe_nom].dropna().unique() if str(x).strip() != ''])
 sel_jefe = st.sidebar.selectbox("Jefe Zonal / JDN", jefes)
 
-supervisores = ["TODOS"] + (sorted([x for x in df_base['SUPERVISOR'].dropna().unique() if x != 'nan']) if 'SUPERVISOR' in df_base.columns else [])
+supervisores = ["TODOS"] + (sorted([x for x in df_base['SUPERVISOR'].dropna().unique() if str(x).strip() != '']) if 'SUPERVISOR' in df_base.columns else [])
 sel_sup = st.sidebar.selectbox("Supervisor", supervisores)
 
-asesores = ["TODOS"] + (sorted([x for x in df_base['ASESOR CORRECTO'].dropna().unique() if x != 'nan']) if 'ASESOR CORRECTO' in df_base.columns else [])
+asesores = ["TODOS"] + (sorted([x for x in df_base['ASESOR CORRECTO'].dropna().unique() if str(x).strip() != '']) if 'ASESOR CORRECTO' in df_base.columns else [])
 sel_asesor = st.sidebar.selectbox("Asesor", asesores)
 
 df_flt = df_base.copy()
@@ -108,7 +111,7 @@ st.markdown("### 🎛️ Filtros de Control Temporal y Estado")
 f_col1, f_col2, f_col3 = st.columns(3)
 
 with f_col1:
-    estados_disp = sorted([x for x in df_flt['ESTADO'].dropna().unique() if x != 'nan'])
+    estados_disp = sorted([x for x in df_flt['ESTADO'].dropna().unique() if str(x).strip() != ''])
     sel_estados_prod = st.multiselect(
         "📌 Estado Operación (Filtro Producción)", 
         options=estados_disp, 
@@ -116,7 +119,7 @@ with f_col1:
     )
 
 with f_col2:
-    meses_des_disp = sorted([m for m in df_base['AÑO_MES_DESEMBOLSO'].unique() if m != 'DESCONOCIDO'])
+    meses_des_disp = sorted([m for m in df_base['AÑO_MES_DESEMBOLSO'].unique() if m != 'NaT'])
     sel_meses_desembolso = st.multiselect(
         "🗓️ Meses Desembolso (Filtro Producción)", 
         options=meses_des_disp, 
@@ -124,7 +127,7 @@ with f_col2:
     )
 
 with f_col3:
-    meses_sol_disp = sorted([m for m in df_base['AÑO_MES_SOLICITUD'].unique() if m != 'DESCONOCIDO'])
+    meses_sol_disp = sorted([m for m in df_base['AÑO_MES_SOLICITUD'].unique() if m != 'NaT'])
     sel_meses_remesa = st.multiselect(
         "📥 Filtrar Meses de Remesa (Fecha Solicitud)", 
         options=meses_sol_disp, 
@@ -138,9 +141,8 @@ if sel_estados_prod:
 if sel_meses_desembolso:
     df_flt_prod = df_flt_prod[df_flt_prod['AÑO_MES_DESEMBOLSO'].isin(sel_meses_desembolso)]
 
-# --- FILTRADO PARA REMESAS (REMESAS PURAS) ---
+# --- FILTRADO PARA REMESAS (REMESAS PURAS POR FECHA SOLICITUD) ---
 df_remesas = df_flt.copy()
-df_remesas = df_remesas[df_remesas['AÑO_MES_SOLICITUD'] != 'DESCONOCIDO']
 if sel_meses_remesa:
     df_remesas = df_remesas[df_remesas['AÑO_MES_SOLICITUD'].isin(sel_meses_remesa)]
 
@@ -207,11 +209,11 @@ with tab1:
 
 # --- PESTAÑA 2: REMESAS (PURA Y COMPLETA POR FECHA DE SOLICITUD) ---
 with tab2:
-    st.subheader("📦 Conteo Total de Remesas por Fecha de Solicitud (Matriz Completa)")
-    st.markdown("Contabiliza de forma exacta las filas de la hoja de cálculo agrupadas por su **`FECHA DE SOLICITUD`**.")
+    st.subheader("📦 Conteo Exacto de Remesas por Fecha de Solicitud (Sincronizado con Excel)")
+    st.markdown("Contabiliza el total de celdas de la hoja de cálculo agrupadas por su **`FECHA DE SOLICITUD`**.")
 
     # Filtro interno opcional de Estado
-    est_rem_disp = ["TODOS"] + sorted([x for x in df_remesas['ESTADO'].dropna().unique() if x != 'nan'])
+    est_rem_disp = ["TODOS"] + sorted([x for x in df_remesas['ESTADO'].dropna().unique() if str(x).strip() != ''])
     sel_est_rem = st.selectbox("📌 Filtrar Estado interno en Remesas (Opcional):", est_rem_disp)
     
     df_rem_tab = df_remesas.copy()
@@ -236,7 +238,7 @@ with tab2:
     with col_r1:
         if not df_rem_tab.empty:
             df_rem_mensual = df_rem_tab.groupby('AÑO_MES_SOLICITUD').size().reset_index(name='CANTIDAD_SOLICITUDES')
-            df_rem_mensual = df_rem_mensual.sort_values('AÑO_MES_SOLICITUD')
+            df_rem_mensual = df_rem_mensual[df_rem_mensual['AÑO_MES_SOLICITUD'] != 'NaT'].sort_values('AÑO_MES_SOLICITUD')
 
             fig_rem_bar = px.bar(
                 df_rem_mensual,
