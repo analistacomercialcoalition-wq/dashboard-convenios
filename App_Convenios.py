@@ -139,7 +139,7 @@ def cargar_datos_corporativos():
     df['ID_UNICO'] = df[cols_id[0]].astype(str).str.strip() if cols_id else df.index.astype(str)
     df = df.drop_duplicates(subset=['ID_UNICO', 'AÑO_MES_SOLICITUD'], keep='first')
 
-    # Carga de Metas desde la pestaña REPORTE VENTA j Jefe
+    # Carga de la pestaña original REPORTE VENTA j Jefe con corrección de duplicados
     sheet_url_metas = "https://docs.google.com/spreadsheets/d/1IBvyIN5H1jYrwEAOD9E5nTCpaBLqxD109HMKCW0Ezt8/gviz/tq?tqx=out:csv&sheet=REPORTE%20VENTA%20j%20Jefe"
     try:
         df_metas = pd.read_csv(sheet_url_metas, dtype=str)
@@ -158,7 +158,7 @@ def cargar_datos_corporativos():
                 nuevas_cols.append(c_limpia)
         df_metas.columns = nuevas_cols
 
-        # Renombrar encabezados específicos de metas solicitado
+        # Renombrar los encabezados de metas específicos solicitados
         nuevos_nombres = {}
         for col in df_metas.columns:
             col_upper = col.upper()
@@ -174,7 +174,7 @@ def cargar_datos_corporativos():
     
     return df, df_metas
 
-with st.spinner("Sincronizando matriz corporativa y metas Coalition..."):
+with st.spinner("Sincronizando matriz corporativa y reporte de ventas..."):
     df_base, df_metas = cargar_datos_corporativos()
 
 def obtener_opciones_limpias(df_in, col_name):
@@ -339,13 +339,13 @@ df_mensual = df_flt_prod.groupby('AÑO_MES_DESEMBOLSO').agg(
 ).reset_index() if not df_flt_prod.empty else pd.DataFrame()
 
 # ==========================================
-# 4. ESTRUCTURA DE PESTAÑAS (INCLUJE CRUCE Y CUMPLIMIENTO)
+# 4. ESTRUCTURA DE PESTAÑAS
 # ==========================================
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📊 Producción Total por Mes", 
     "📦 Remesas (Volumen por Fecha de Solicitud)", 
     "🏆 Red Comercial & Ranking", 
-    "🎯 Metas y Cumplimiento",
+    "🎯 Reporte Venta j Jefe",
     "🎲 Monte Carlo (Estacionalidad Convenios Perú)"
 ])
 
@@ -448,58 +448,15 @@ with tab3:
             fig_jefe.update_layout(template="plotly_white")
             st.plotly_chart(fig_jefe, use_container_width=True)
 
-# --- PESTAÑA 4: METAS Y CUMPLIMIENTO ---
+# --- PESTAÑA 4: REPORTE VENTA J JEFE ---
 with tab4:
-    st.subheader("🎯 Matriz de Metas y Cumplimiento Gerencial (Jefe Zonal y Supervisor)")
-    st.markdown("Comparativa directa entre la producción real ejecutada y las metas comerciales asignadas por **Jefe Zonal** y **Supervisor**.")
+    st.subheader("🎯 Reporte Venta j Jefe (Vista Completa de la Pestaña)")
+    st.markdown("Visualización completa de la información extraída de la pestaña **REPORTE VENTA j Jefe** con los campos de metas actualizados.")
     
-    if not df_metas.empty and not df_flt_prod.empty:
-        col_sup_exacta = 'SUPERVISOR' if 'SUPERVISOR' in df_base.columns else None
-        
-        if col_jefe_exacta and col_sup_exacta:
-            # Agrupar producción real por Jefe Zonal y Supervisor
-            df_real_js = df_flt_prod.groupby([col_jefe_exacta, col_sup_exacta]).agg(
-                REAL_OPERACIONES=('NETO', 'count'),
-                REAL_MONTO=('NETO', 'sum')
-            ).reset_index()
-            
-            # Detectar columnas correspondientes en el reporte de metas
-            cols_meta_jefe = [c for c in df_metas.columns if 'JEFE' in c.upper() or 'ZONAL' in c.upper()]
-            cols_meta_sup = [c for c in df_metas.columns if 'SUPERVISOR' in c.upper()]
-            
-            c_jefe_m = cols_meta_jefe[0] if cols_meta_jefe else df_metas.columns[0]
-            c_sup_m = cols_meta_sup[0] if cols_meta_sup else df_metas.columns[1] if len(df_metas.columns) > 1 else df_metas.columns[0]
-            
-            # Normalizar textos para cruce exacto
-            df_metas['JEFE_JOIN'] = df_metas[c_jefe_m].astype(str).str.strip().str.upper()
-            df_metas['SUP_JOIN'] = df_metas[c_sup_m].astype(str).str.strip().str.upper()
-            
-            df_real_js['JEFE_JOIN'] = df_real_js[col_jefe_exacta].astype(str).str.strip().str.upper()
-            df_real_js['SUP_JOIN'] = df_real_js[col_sup_exacta].astype(str).str.strip().str.upper()
-            
-            # Cruce de Metas con Real por Jefe y Supervisor
-            df_cruce = pd.merge(df_metas, df_real_js, on=['JEFE_JOIN', 'SUP_JOIN'], how='left').fillna(0)
-            
-            # Limpiar y asegurar formato numérico en metas
-            if 'Meta de operaciones' in df_cruce.columns:
-                df_cruce['Meta de operaciones'] = pd.to_numeric(df_cruce['Meta de operaciones'].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
-                df_cruce['% Cumplimiento Ops'] = np.where(df_cruce['Meta de operaciones'] > 0, (df_cruce['REAL_OPERACIONES'] / df_cruce['Meta de operaciones']) * 100, 0)
-                df_cruce['% Cumplimiento Ops'] = df_cruce['% Cumplimiento Ops'].round(2).astype(str) + '%'
-            
-            if 'Meta de monto' in df_cruce.columns:
-                df_cruce['Meta de monto'] = pd.to_numeric(df_cruce['Meta de monto'].astype(str).str.replace(',', '').str.replace('S/', ''), errors='coerce').fillna(0)
-                df_cruce['% Cumplimiento Monto'] = np.where(df_cruce['Meta de monto'] > 0, (df_cruce['REAL_MONTO'] / df_cruce['Meta de monto']) * 100, 0)
-                df_cruce['% Cumplimiento Monto'] = df_cruce['% Cumplimiento Monto'].round(2).astype(str) + '%'
-
-            # Columnas finales a mostrar
-            cols_mostrar = [c_jefe_m, c_sup_m, 'Meta de operaciones', 'REAL_OPERACIONES', '% Cumplimiento Ops', 'Meta de monto', 'REAL_MONTO', '% Cumplimiento Monto']
-            cols_finales = [c for c in cols_mostrar if c in df_cruce.columns]
-            
-            st.dataframe(df_cruce[cols_finales], use_container_width=True)
-        else:
-            st.warning("No se encontraron las columnas de Jefe Zonal o Supervisor en la matriz principal.")
+    if not df_metas.empty:
+        st.dataframe(df_metas, use_container_width=True)
     else:
-        st.info("No se pudo realizar el cruce. Verifique que la pestaña 'REPORTE VENTA j Jefe' contenga datos válidos.")
+        st.info("No se encontró información o la pestaña 'REPORTE VENTA j Jefe' está vacía o pendiente de sincronizar.")
 
 # --- PESTAÑA 5: MONTE CARLO ---
 with tab5:
