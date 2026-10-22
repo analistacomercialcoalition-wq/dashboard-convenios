@@ -182,7 +182,7 @@ kpi1, kpi2, kpi3, kpi4 = st.columns(4)
 kpi1.metric("💰 Neto Total Desembolsado", formato_compacto_limpio(total_neto))
 kpi2.metric("📋 Total Operaciones Desembolsadas", f"{total_ops:,} Ops")
 kpi3.metric("📅 Días Con Desembolso", f"{dias_efectivos:,}")
-kpi4.metric("📈 Prom. Diario / Ticket", f"{formato_compacto_limpio(prom_diario)}")
+kpi4.metric("📈 Prom. Diario / Ticket", formato_compacto_limpio(prom_diario))
 
 st.markdown("---")
 
@@ -298,12 +298,11 @@ with tab3:
             fig_jefe = px.bar(df_jefe, x=col_jefe_exacta, y='NETO', orientation='h', title="Monto Neto por Jefe Zonal (S/)", text_auto=',.0f')
             st.plotly_chart(fig_jefe, use_container_width=True)
 
-# --- PESTAÑA 4: MOTOR MONTE CARLO RESTAURADO COMPLETO ---
+# --- PESTAÑA 4: MOTOR MONTE CARLO CON PUNTOS Y MONTOS COMPACTOS ---
 with tab4:
     st.subheader("🎲 Motor Estocástico Monte Carlo (100,000 Escenarios - Convenios Perú)")
     st.markdown("Proyección basada en el **promedio mensual histórico real** de la matriz, calibrada con la sensibilidad de créditos por planilla (Picos en Noviembre, Diciembre y Julio).")
 
-    # Controles de Calibración Estacional
     with st.expander("⚙️ Calibración Avanzada de Factores Estacionales (Perú)", expanded=True):
         col_s1, col_s2, col_s3, col_s4 = st.columns(4)
         with col_s1:
@@ -315,7 +314,6 @@ with tab4:
         with col_s4:
             f_mar = st.slider("Factor Marzo (Campaña Escolar)", 0.8, 1.4, 1.10, 0.05)
 
-    # Cálculo dinámico basado en la producción real filtrada
     base_mensual_historica = df_mensual['MONTO_TOTAL_NETO'].mean() if not df_mensual.empty else 28500000
     std_mensual_historica = df_mensual['MONTO_TOTAL_NETO'].std() if (not df_mensual.empty and len(df_mensual) > 1) else base_mensual_historica * 0.12
 
@@ -349,7 +347,12 @@ with tab4:
         'Optimista (P90)': p90_l
     })
 
-    # Gráfico de Líneas con Bandas
+    # Columnas con formato compacto para etiquetas y hovers
+    df_res_mc['P10_FMT'] = df_res_mc['Pesimista (P10)'].apply(formato_compacto_limpio)
+    df_res_mc['P50_FMT'] = df_res_mc['Base / Esperado (P50)'].apply(formato_compacto_limpio)
+    df_res_mc['P90_FMT'] = df_res_mc['Optimista (P90)'].apply(formato_compacto_limpio)
+
+    # Gráfico con puntos (markers=True)
     fig_mc = px.line(
         df_res_mc, x='Mes', y=['Pesimista (P10)', 'Base / Esperado (P50)', 'Optimista (P90)'],
         title="Proyección Anual de Bandas Estacionales Perú - Convenios (S/)",
@@ -360,11 +363,23 @@ with tab4:
             'Optimista (P90)': '#10b981'
         }
     )
-    fig_mc.update_layout(height=450, yaxis_title="Monto Proyectado (S/)")
+
+    # Actualizar formato de texto y puntos para que aparezcan montos compactos limpios
+    fig_mc.update_traces(
+        mode='lines+markers+text',
+        textposition='top center'
+    )
+    
+    # Asignar textos compactos específicos a cada traza para evitar saturación (mostramos P50 legible o todas según preferencia)
+    fig_mc.data[0].text = df_res_mc['P10_FMT']
+    fig_mc.data[1].text = df_res_mc['P50_FMT']
+    fig_mc.data[2].text = df_res_mc['P90_FMT']
+
+    fig_mc.update_layout(height=500, yaxis_title="Monto Proyectado (S/)")
     st.plotly_chart(fig_mc, use_container_width=True)
 
     st.markdown("### 📋 Resumen Financiero Proyectado Estacional (S/)")
-    df_show = df_res_mc.copy()
+    df_show = df_res_mc[['Mes', 'Pesimista (P10)', 'Base / Esperado (P50)', 'Optimista (P90)']].copy()
     for col in ['Pesimista (P10)', 'Base / Esperado (P50)', 'Optimista (P90)']:
         df_show[col] = df_show[col].apply(formato_compacto_limpio)
     st.dataframe(df_show, use_container_width=True)
