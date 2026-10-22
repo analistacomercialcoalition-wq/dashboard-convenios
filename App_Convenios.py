@@ -91,10 +91,11 @@ with col_tit:
 st.markdown("---")
 
 # ==========================================
-# 1. CARGA Y LIMPIEZA DE DATOS (INCLUYE TERRITORIAL)
+# 1. CARGA Y LIMPIEZA DE DATOS (HOJA 1 Y REPORTE VENTA j Jefe)
 # ==========================================
 @st.cache_data(ttl=600)
 def cargar_datos_corporativos():
+    # Matriz Principal de Operaciones
     sheet_url = "https://docs.google.com/spreadsheets/d/1IBvyIN5H1jYrwEAOD9E5nTCpaBLqxD109HMKCW0Ezt8/gviz/tq?tqx=out:csv&sheet=Hoja%201"
     df = pd.read_csv(sheet_url, dtype=str)
     df.columns = df.columns.str.strip()
@@ -136,13 +137,20 @@ def cargar_datos_corporativos():
     # ID de desduplicación exacta
     cols_id = [c for c in df.columns if any(k in c.upper() for k in ['EXPEDIE', 'DNI', 'CREDITO', 'OPERACION'])]
     df['ID_UNICO'] = df[cols_id[0]].astype(str).str.strip() if cols_id else df.index.astype(str)
-
     df = df.drop_duplicates(subset=['ID_UNICO', 'AÑO_MES_SOLICITUD'], keep='first')
-    
-    return df
 
-with st.spinner("Sincronizando matriz corporativa Coalition..."):
-    df_base = cargar_datos_corporativos()
+    # Carga de Metas desde la pestaña REPORTE VENTA j Jefe
+    sheet_url_metas = "https://docs.google.com/spreadsheets/d/1IBvyIN5H1jYrwEAOD9E5nTCpaBLqxD109HMKCW0Ezt8/gviz/tq?tqx=out:csv&sheet=REPORTE%20VENTA%20j%20Jefe"
+    try:
+        df_metas = pd.read_csv(sheet_url_metas, dtype=str)
+        df_metas.columns = df_metas.columns.str.strip()
+    except Exception:
+        df_metas = pd.DataFrame()
+    
+    return df, df_metas
+
+with st.spinner("Sincronizando matriz corporativa y metas Coalition..."):
+    df_base, df_metas = cargar_datos_corporativos()
 
 def obtener_opciones_limpias(df_in, col_name):
     if col_name in df_in.columns:
@@ -160,7 +168,6 @@ st.sidebar.markdown("<h2 style='color: #D97706; text-align: center;'>CONVENIOS C
 st.sidebar.markdown("---")
 st.sidebar.subheader("🔐 Credenciales de Acceso")
 
-# Base de datos restringida exclusivamente a Luigi Socca
 CREDENCIALES_USUARIOS = {
     "luigi.socca@coalition.com.pe": {
         "password": "45775003",
@@ -168,18 +175,15 @@ CREDENCIALES_USUARIOS = {
     }
 }
 
-# Campos de inicio de sesión vacíos por defecto
+# Campos vacíos por defecto obligatorios
 input_correo = st.sidebar.text_input("Correo Corporativo:", value="").strip().lower()
 input_pass = st.sidebar.text_input("Contraseña:", type="password", value="").strip()
 
-# Validación inicial si los campos están vacíos
 if not input_correo or not input_pass:
     st.sidebar.warning("⚠️ Por favor ingrese su correo y contraseña corporativa para acceder al sistema.")
     st.stop()
 
-# Validación de seguridad de credenciales
 usuario_info = CREDENCIALES_USUARIOS.get(input_correo, None)
-
 if usuario_info is None or usuario_info["password"] != input_pass:
     st.sidebar.error("⚠️ Correo o contraseña incorrectos.")
     st.stop()
@@ -311,12 +315,13 @@ df_mensual = df_flt_prod.groupby('AÑO_MES_DESEMBOLSO').agg(
 ).reset_index() if not df_flt_prod.empty else pd.DataFrame()
 
 # ==========================================
-# 4. ESTRUCTURA DE PESTAÑAS
+# 4. ESTRUCTURA DE PESTAÑAS (INCLUYE METAS Y CUMPLIMIENTO)
 # ==========================================
-tab1, tab2, tab3, tab4 = st.tabs([
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📊 Producción Total por Mes", 
     "📦 Remesas (Volumen por Fecha de Solicitud)", 
     "🏆 Red Comercial & Ranking", 
+    "🎯 Metas y Cumplimiento",
     "🎲 Monte Carlo (Estacionalidad Convenios Perú)"
 ])
 
@@ -419,8 +424,18 @@ with tab3:
             fig_jefe.update_layout(template="plotly_white")
             st.plotly_chart(fig_jefe, use_container_width=True)
 
-# --- PESTAÑA 4: MONTE CARLO ---
+# --- PESTAÑA 4: METAS Y CUMPLIMIENTO ---
 with tab4:
+    st.subheader("🎯 Matriz de Metas y Cumplimiento Gerencial (REPORTE VENTA j Jefe)")
+    st.markdown("Comparativa directa entre la producción real ejecutada y las metas comerciales asignadas.")
+    
+    if not df_metas.empty:
+        st.dataframe(df_metas, use_container_width=True)
+    else:
+        st.info("No se encontró información o la pestaña 'REPORTE VENTA j Jefe' está vacía o pendiente de sincronizar.")
+
+# --- PESTAÑA 5: MONTE CARLO ---
+with tab5:
     st.subheader("🎲 Motor Estocástico Monte Carlo (100,000 Escenarios - Convenios Perú)")
     st.markdown("Proyección basada en el **promedio mensual histórico real** de la matriz, calibrada con la sensibilidad de créditos por planilla (Picos en Noviembre, Diciembre y Julio).")
 
