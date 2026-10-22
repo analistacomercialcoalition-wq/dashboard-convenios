@@ -26,7 +26,7 @@ st.markdown("### **Coalition Group — Matriz de Colocaciones, Remesas y Proyecc
 st.markdown("---")
 
 # ==========================================
-# 1. CARGA Y LIMPIEZA DE DATOS (LECTURA ESTRUCTURADA)
+# 1. CARGA Y LIMPIEZA DE DATOS
 # ==========================================
 @st.cache_data(ttl=600)
 def cargar_datos_corporativos():
@@ -40,7 +40,7 @@ def cargar_datos_corporativos():
         errors='coerce'
     ).fillna(0)
 
-    # Limpieza rigurosa de texto conservando nombres de columnas exactos
+    # Limpieza de texto de jerarquía comercial
     cols_a_limpiar = ['ZONA', 'PLAZA', 'JEFE ZONAL', 'SUPERVISOR', 'ASESOR CORRECTO', 'ESTADO']
     for col in cols_a_limpiar:
         if col in df.columns:
@@ -68,7 +68,7 @@ def cargar_datos_corporativos():
 
     df = df[df['FECHA_SOLICITUD_DT'].notna()]
     
-    # Generar ID de desduplicación para mantener coincidencia exacta con Excel
+    # ID de desduplicación
     cols_id = [c for c in df.columns if any(k in c.upper() for k in ['EXPEDIE', 'DNI', 'CREDITO', 'OPERACION'])]
     df['ID_UNICO'] = df[cols_id[0]].astype(str).str.strip() if cols_id else df.index.astype(str)
 
@@ -93,32 +93,27 @@ st.sidebar.subheader("🏢 Estructura Comercial")
 
 df_flt_sidebar = df_base.copy()
 
-# 1. ZONA
 zonas = ["TODAS"] + obtener_opciones_limpias(df_flt_sidebar, 'ZONA')
 sel_zona = st.sidebar.selectbox("Zona", zonas)
 if sel_zona != "TODAS":
     df_flt_sidebar = df_flt_sidebar[df_flt_sidebar['ZONA'] == sel_zona]
 
-# 2. PLAZA
 plazas = ["TODAS"] + obtener_opciones_limpias(df_flt_sidebar, 'PLAZA')
 sel_plaza = st.sidebar.selectbox("Plaza", plazas)
 if sel_plaza != "TODAS":
     df_flt_sidebar = df_flt_sidebar[df_flt_sidebar['PLAZA'] == sel_plaza]
 
-# 3. JEFE ZONAL (ESTRICTO - SIN MEZCLAR JDN O JEFE DE NEGOCIO)
 col_jefe_exacta = 'JEFE ZONAL' if 'JEFE ZONAL' in df_base.columns else ('JDN' if 'JDN' in df_base.columns else None)
 jefes = ["TODOS"] + (obtener_opciones_limpias(df_flt_sidebar, col_jefe_exacta) if col_jefe_exacta else [])
 sel_jefe = st.sidebar.selectbox("Jefe Zonal", jefes)
 if sel_jefe != "TODOS" and col_jefe_exacta:
     df_flt_sidebar = df_flt_sidebar[df_flt_sidebar[col_jefe_exacta] == sel_jefe]
 
-# 4. SUPERVISOR (ESTRICTO)
 supervisores = ["TODOS"] + obtener_opciones_limpias(df_flt_sidebar, 'SUPERVISOR')
 sel_sup = st.sidebar.selectbox("Supervisor", supervisores)
 if sel_sup != "TODOS" and 'SUPERVISOR' in df_flt_sidebar.columns:
     df_flt_sidebar = df_flt_sidebar[df_flt_sidebar['SUPERVISOR'] == sel_sup]
 
-# 5. ASESOR
 asesores = ["TODOS"] + obtener_opciones_limpias(df_flt_sidebar, 'ASESOR CORRECTO')
 sel_asesor = st.sidebar.selectbox("Asesor", asesores)
 if sel_asesor != "TODOS" and 'ASESOR CORRECTO' in df_flt_sidebar.columns:
@@ -196,6 +191,9 @@ df_mensual = df_flt_prod.groupby('AÑO_MES_DESEMBOLSO').agg(
     OPERACIONES=('NETO', 'count')
 ).reset_index() if not df_flt_prod.empty else pd.DataFrame()
 
+# ==========================================
+# 4. ESTRUCTURA DE PESTAÑAS
+# ==========================================
 tab1, tab2, tab3, tab4 = st.tabs([
     "📊 Producción Total por Mes", 
     "📦 Remesas (Volumen por Fecha de Solicitud)", 
@@ -203,6 +201,7 @@ tab1, tab2, tab3, tab4 = st.tabs([
     "🎲 Monte Carlo (Estacionalidad Convenios Perú)"
 ])
 
+# --- PESTAÑA 1: PRODUCCIÓN ---
 with tab1:
     st.subheader("💵 Monto Neto Total Desembolsado por Periodo")
     if not df_mensual.empty:
@@ -221,6 +220,7 @@ with tab1:
     else:
         st.info("No se encontraron registros de producción con los filtros seleccionados.")
 
+# --- PESTAÑA 2: REMESAS ---
 with tab2:
     st.subheader("📦 Conteo Exacto de Remesas por Fecha de Solicitud (Sincronizado con Excel)")
     st.markdown("Contabiliza el total de operaciones agrupadas por su **`FECHA DE SOLICITUD`**.")
@@ -283,6 +283,7 @@ with tab2:
             fig_pie_est.update_layout(height=450)
             st.plotly_chart(fig_pie_est, use_container_width=True)
 
+# --- PESTAÑA 3: RED COMERCIAL ---
 with tab3:
     st.subheader("Evaluación de Desempeño por Plaza y Jefatura Zonal")
     col_a, col_b = st.columns(2)
@@ -297,6 +298,73 @@ with tab3:
             fig_jefe = px.bar(df_jefe, x=col_jefe_exacta, y='NETO', orientation='h', title="Monto Neto por Jefe Zonal (S/)", text_auto=',.0f')
             st.plotly_chart(fig_jefe, use_container_width=True)
 
+# --- PESTAÑA 4: MOTOR MONTE CARLO RESTAURADO COMPLETO ---
 with tab4:
     st.subheader("🎲 Motor Estocástico Monte Carlo (100,000 Escenarios - Convenios Perú)")
-    st.markdown("Proyección basada en el **promedio mensual histórico real** de la matriz.")
+    st.markdown("Proyección basada en el **promedio mensual histórico real** de la matriz, calibrada con la sensibilidad de créditos por planilla (Picos en Noviembre, Diciembre y Julio).")
+
+    # Controles de Calibración Estacional
+    with st.expander("⚙️ Calibración Avanzada de Factores Estacionales (Perú)", expanded=True):
+        col_s1, col_s2, col_s3, col_s4 = st.columns(4)
+        with col_s1:
+            f_jul = st.slider("Factor Julio (Gratificación Fiestas Patrias)", 1.0, 1.8, 1.25, 0.05)
+        with col_s2:
+            f_nov = st.slider("Factor Noviembre (CTS y Pre-cierre)", 1.0, 1.8, 1.20, 0.05)
+        with col_s3:
+            f_dic = st.slider("Factor Diciembre (Aguinaldo / Navidad)", 1.0, 2.0, 1.35, 0.05)
+        with col_s4:
+            f_mar = st.slider("Factor Marzo (Campaña Escolar)", 0.8, 1.4, 1.10, 0.05)
+
+    # Cálculo dinámico basado en la producción real filtrada
+    base_mensual_historica = df_mensual['MONTO_TOTAL_NETO'].mean() if not df_mensual.empty else 28500000
+    std_mensual_historica = df_mensual['MONTO_TOTAL_NETO'].std() if (not df_mensual.empty and len(df_mensual) > 1) else base_mensual_historica * 0.12
+
+    factores_peru = {
+        'Enero': 0.85, 'Febrero': 0.90, 'Marzo': f_mar, 'Abril': 1.00,
+        'Mayo': 1.02, 'Junio': 1.08, 'Julio': f_jul, 'Agosto': 0.95,
+        'Setiembre': 1.00, 'Octubre': 1.05, 'Noviembre': f_nov, 'Diciembre': f_dic
+    }
+
+    sims = 100000
+    np.random.seed(42)
+    meses_nombres = list(factores_peru.keys())
+    p10_l, p50_l, p90_l = [], [], []
+
+    for m in meses_nombres:
+        factor = factores_peru[m]
+        media_mes = base_mensual_historica * factor
+        std_mes = max(std_mensual_historica * factor, base_mensual_historica * 0.05)
+        
+        totales = np.random.normal(loc=media_mes, scale=std_mes, size=sims)
+        totales = np.clip(totales, 0, None)
+
+        p10_l.append(np.percentile(totales, 10))
+        p50_l.append(np.percentile(totales, 50))
+        p90_l.append(np.percentile(totales, 90))
+
+    df_res_mc = pd.DataFrame({
+        'Mes': meses_nombres,
+        'Pesimista (P10)': p10_l,
+        'Base / Esperado (P50)': p50_l,
+        'Optimista (P90)': p90_l
+    })
+
+    # Gráfico de Líneas con Bandas
+    fig_mc = px.line(
+        df_res_mc, x='Mes', y=['Pesimista (P10)', 'Base / Esperado (P50)', 'Optimista (P90)'],
+        title="Proyección Anual de Bandas Estacionales Perú - Convenios (S/)",
+        markers=True,
+        color_discrete_map={
+            'Pesimista (P10)': '#ef4444',
+            'Base / Esperado (P50)': '#3b82f6',
+            'Optimista (P90)': '#10b981'
+        }
+    )
+    fig_mc.update_layout(height=450, yaxis_title="Monto Proyectado (S/)")
+    st.plotly_chart(fig_mc, use_container_width=True)
+
+    st.markdown("### 📋 Resumen Financiero Proyectado Estacional (S/)")
+    df_show = df_res_mc.copy()
+    for col in ['Pesimista (P10)', 'Base / Esperado (P50)', 'Optimista (P90)']:
+        df_show[col] = df_show[col].apply(formato_compacto_limpio)
+    st.dataframe(df_show, use_container_width=True)
