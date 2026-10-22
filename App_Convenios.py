@@ -26,7 +26,7 @@ st.markdown("### **Coalition Group — Matriz de Colocaciones, Remesas y Proyecc
 st.markdown("---")
 
 # ==========================================
-# 1. CARGA Y LIMPIEZA CON DESDUPLICACIÓN EXACTA
+# 1. CARGA Y LIMPIEZA DE DATOS (LECTURA ESTRUCTURADA)
 # ==========================================
 @st.cache_data(ttl=600)
 def cargar_datos_corporativos():
@@ -40,10 +40,16 @@ def cargar_datos_corporativos():
         errors='coerce'
     ).fillna(0)
 
+    # Limpieza rigurosa de texto conservando nombres de columnas exactos
+    cols_a_limpiar = ['ZONA', 'PLAZA', 'JEFE ZONAL', 'SUPERVISOR', 'ASESOR CORRECTO', 'ESTADO']
+    for col in cols_a_limpiar:
+        if col in df.columns:
+            df[col] = df[col].fillna('').astype(str).str.strip().str.upper()
+
     # Parseo de Fecha de Solicitud (DD/MM/YYYY)
     col_sol = [c for c in df.columns if 'SOLICITUD' in c.upper()][0]
     df['FECHA_SOLICITUD_DT'] = pd.to_datetime(df[col_sol], format='%d/%m/%Y', errors='coerce')
-    mask_null_sol = df['FECHA_SOLICITUD_DT'].isna() & df[col_sol].notna()
+    mask_null_sol = df['FECHA_SOLICITUD_DT'].isna() & (df[col_sol] != '')
     if mask_null_sol.any():
         df.loc[mask_null_sol, 'FECHA_SOLICITUD_DT'] = pd.to_datetime(
             df.loc[mask_null_sol, col_sol], dayfirst=True, errors='coerce'
@@ -53,7 +59,7 @@ def cargar_datos_corporativos():
     # Parseo de Fecha de Desembolso (DD/MM/YYYY)
     col_des = [c for c in df.columns if 'DESEMBOLSO' in c.upper()][0]
     df['FECHA_DESEMBOLSO_DT'] = pd.to_datetime(df[col_des], format='%d/%m/%Y', errors='coerce')
-    mask_null_des = df['FECHA_DESEMBOLSO_DT'].isna() & df[col_des].notna()
+    mask_null_des = df['FECHA_DESEMBOLSO_DT'].isna() & (df[col_des] != '')
     if mask_null_des.any():
         df.loc[mask_null_des, 'FECHA_DESEMBOLSO_DT'] = pd.to_datetime(
             df.loc[mask_null_des, col_des], dayfirst=True, errors='coerce'
@@ -62,59 +68,63 @@ def cargar_datos_corporativos():
 
     df = df[df['FECHA_SOLICITUD_DT'].notna()]
     
-    # Identificar columna ID única (Expediente o DNI) para replicar el conteo exacto de Excel
-    cols_id_candidatas = [c for c in df.columns if any(k in c.upper() for k in ['EXPEDIE', 'DNI', 'CREDITO', 'OPERACION'])]
-    if cols_id_candidatas:
-        df['ID_UNICO'] = df[cols_id_candidatas[0]].astype(str)
-    else:
-        df['ID_UNICO'] = df.index.astype(str)
+    # Generar ID de desduplicación para mantener coincidencia exacta con Excel
+    cols_id = [c for c in df.columns if any(k in c.upper() for k in ['EXPEDIE', 'DNI', 'CREDITO', 'OPERACION'])]
+    df['ID_UNICO'] = df[cols_id[0]].astype(str).str.strip() if cols_id else df.index.astype(str)
 
-    # Desduplicación exacta por ID y Mes de Solicitud (para que septiembre arroje las 890 exactas)
     df = df.drop_duplicates(subset=['ID_UNICO', 'AÑO_MES_SOLICITUD'], keep='first')
     
     return df
 
-with st.spinner("Sincronizando base de datos corporativa..."):
+with st.spinner("Sincronizando base comercial..."):
     df_base = cargar_datos_corporativos()
 
-def obtener_lista_ordenada_segura(serie):
-    elementos = serie.dropna().astype(str).unique()
-    elementos_limpios = [str(x).strip() for x in elementos if str(x).strip() not in ['', 'nan', 'NaT', 'None']]
-    return sorted(elementos_limpios)
+def obtener_opciones_limpias(df_in, col_name):
+    if col_name in df_in.columns:
+        elementos = sorted([x for x in df_in[col_name].dropna().unique() if x not in ['', 'NAN', 'NAT', 'NONE']])
+        return elementos
+    return []
 
 # ==========================================
-# 2. FILTROS EN BARRA LATERAL (JERARQUÍA COMERCIAL)
+# 2. FILTROS EN BARRA LATERAL (ESTRUCTURA COMERCIAL ESTRICTA)
 # ==========================================
 st.sidebar.header("🔍 Panel de Filtros y Control")
 st.sidebar.subheader("🏢 Estructura Comercial")
 
-zonas = ["TODAS"] + obtener_lista_ordenada_segura(df_base['ZONA'])
+df_flt_sidebar = df_base.copy()
+
+# 1. ZONA
+zonas = ["TODAS"] + obtener_opciones_limpias(df_flt_sidebar, 'ZONA')
 sel_zona = st.sidebar.selectbox("Zona", zonas)
-
-plazas = ["TODAS"] + obtener_lista_ordenada_segura(df_base['PLAZA'])
-sel_plaza = st.sidebar.selectbox("Plaza", plazas)
-
-col_jefe_nom = 'JDN' if 'JDN' in df_base.columns else 'JEFE ZONAL'
-jefes = ["TODOS"] + obtener_lista_ordenada_segura(df_base[col_jefe_nom])
-sel_jefe = st.sidebar.selectbox("Jefe Zonal / JDN", jefes)
-
-supervisores = ["TODOS"] + (obtener_lista_ordenada_segura(df_base['SUPERVISOR']) if 'SUPERVISOR' in df_base.columns else [])
-sel_sup = st.sidebar.selectbox("Supervisor", supervisores)
-
-asesores = ["TODOS"] + (obtener_lista_ordenada_segura(df_base['ASESOR CORRECTO']) if 'ASESOR CORRECTO' in df_base.columns else [])
-sel_asesor = st.sidebar.selectbox("Asesor", asesores)
-
-df_flt = df_base.copy()
 if sel_zona != "TODAS":
-    df_flt = df_flt[df_flt['ZONA'] == sel_zona]
+    df_flt_sidebar = df_flt_sidebar[df_flt_sidebar['ZONA'] == sel_zona]
+
+# 2. PLAZA
+plazas = ["TODAS"] + obtener_opciones_limpias(df_flt_sidebar, 'PLAZA')
+sel_plaza = st.sidebar.selectbox("Plaza", plazas)
 if sel_plaza != "TODAS":
-    df_flt = df_flt[df_flt['PLAZA'] == sel_plaza]
-if sel_jefe != "TODOS":
-    df_flt = df_flt[df_flt[col_jefe_nom] == sel_jefe]
-if sel_sup != "TODOS" and 'SUPERVISOR' in df_flt.columns:
-    df_flt = df_flt[df_flt['SUPERVISOR'] == sel_sup]
-if sel_asesor != "TODOS" and 'ASESOR CORRECTO' in df_flt.columns:
-    df_flt = df_flt[df_flt['ASESOR CORRECTO'] == sel_asesor]
+    df_flt_sidebar = df_flt_sidebar[df_flt_sidebar['PLAZA'] == sel_plaza]
+
+# 3. JEFE ZONAL (ESTRICTO - SIN MEZCLAR JDN O JEFE DE NEGOCIO)
+col_jefe_exacta = 'JEFE ZONAL' if 'JEFE ZONAL' in df_base.columns else ('JDN' if 'JDN' in df_base.columns else None)
+jefes = ["TODOS"] + (obtener_opciones_limpias(df_flt_sidebar, col_jefe_exacta) if col_jefe_exacta else [])
+sel_jefe = st.sidebar.selectbox("Jefe Zonal", jefes)
+if sel_jefe != "TODOS" and col_jefe_exacta:
+    df_flt_sidebar = df_flt_sidebar[df_flt_sidebar[col_jefe_exacta] == sel_jefe]
+
+# 4. SUPERVISOR (ESTRICTO)
+supervisores = ["TODOS"] + obtener_opciones_limpias(df_flt_sidebar, 'SUPERVISOR')
+sel_sup = st.sidebar.selectbox("Supervisor", supervisores)
+if sel_sup != "TODOS" and 'SUPERVISOR' in df_flt_sidebar.columns:
+    df_flt_sidebar = df_flt_sidebar[df_flt_sidebar['SUPERVISOR'] == sel_sup]
+
+# 5. ASESOR
+asesores = ["TODOS"] + obtener_opciones_limpias(df_flt_sidebar, 'ASESOR CORRECTO')
+sel_asesor = st.sidebar.selectbox("Asesor", asesores)
+if sel_asesor != "TODOS" and 'ASESOR CORRECTO' in df_flt_sidebar.columns:
+    df_flt_sidebar = df_flt_sidebar[df_flt_sidebar['ASESOR CORRECTO'] == sel_asesor]
+
+df_flt = df_flt_sidebar.copy()
 
 # ==========================================
 # 3. FILTROS EN ENCABEZADO SUPERIOR
@@ -123,7 +133,7 @@ st.markdown("### 🎛️ Filtros de Control Temporal y Estado")
 f_col1, f_col2, f_col3 = st.columns(3)
 
 with f_col1:
-    estados_disp = obtener_lista_ordenada_segura(df_flt['ESTADO'])
+    estados_disp = obtener_opciones_limpias(df_flt, 'ESTADO')
     sel_estados_prod = st.multiselect(
         "📌 Estado Operación (Filtro Producción)", 
         options=estados_disp, 
@@ -131,7 +141,7 @@ with f_col1:
     )
 
 with f_col2:
-    meses_des_disp = obtener_lista_ordenada_segura(df_base['AÑO_MES_DESEMBOLSO'])
+    meses_des_disp = obtener_opciones_limpias(df_base, 'AÑO_MES_DESEMBOLSO')
     sel_meses_desembolso = st.multiselect(
         "🗓️ Meses Desembolso (Filtro Producción)", 
         options=meses_des_disp, 
@@ -139,19 +149,21 @@ with f_col2:
     )
 
 with f_col3:
-    meses_sol_disp = obtener_lista_ordenada_segura(df_base['AÑO_MES_SOLICITUD'])
+    meses_sol_disp = obtener_opciones_limpias(df_base, 'AÑO_MES_SOLICITUD')
     sel_meses_remesa = st.multiselect(
         "📥 Filtrar Meses de Remesa (Fecha Solicitud)", 
         options=meses_sol_disp, 
         default=[]
     )
 
+# --- FILTRADO PRODUCCIÓN ---
 df_flt_prod = df_flt.copy()
 if sel_estados_prod:
     df_flt_prod = df_flt_prod[df_flt_prod['ESTADO'].isin(sel_estados_prod)]
 if sel_meses_desembolso:
     df_flt_prod = df_flt_prod[df_flt_prod['AÑO_MES_DESEMBOLSO'].isin(sel_meses_desembolso)]
 
+# --- FILTRADO REMESAS ---
 df_remesas = df_flt.copy()
 if sel_meses_remesa:
     df_remesas = df_remesas[df_remesas['AÑO_MES_SOLICITUD'].isin(sel_meses_remesa)]
@@ -211,9 +223,9 @@ with tab1:
 
 with tab2:
     st.subheader("📦 Conteo Exacto de Remesas por Fecha de Solicitud (Sincronizado con Excel)")
-    st.markdown("Contabiliza el total de operaciones únicas agrupadas por su **`FECHA DE SOLICITUD`**.")
+    st.markdown("Contabiliza el total de operaciones agrupadas por su **`FECHA DE SOLICITUD`**.")
 
-    est_rem_disp = ["TODOS"] + obtener_lista_ordenada_segura(df_remesas['ESTADO'])
+    est_rem_disp = ["TODOS"] + obtener_opciones_limpias(df_remesas, 'ESTADO')
     sel_est_rem = st.selectbox("📌 Filtrar Estado interno en Remesas (Opcional):", est_rem_disp)
     
     df_rem_tab = df_remesas.copy()
@@ -280,9 +292,9 @@ with tab3:
             fig_plz = px.bar(df_plaza, x='NETO', y='PLAZA', orientation='h', title="Monto Neto por Plaza (S/)", text_auto=',.0f')
             st.plotly_chart(fig_plz, use_container_width=True)
     with col_b:
-        if not df_flt_prod.empty:
-            df_jefe = df_flt_prod.groupby(col_jefe_nom)['NETO'].sum().reset_index().sort_values('NETO', ascending=True)
-            fig_jefe = px.bar(df_jefe, x=col_jefe_nom, y='NETO', orientation='h', title="Monto Neto por Jefe Zonal / JDN (S/)", text_auto=',.0f')
+        if not df_flt_prod.empty and col_jefe_exacta:
+            df_jefe = df_flt_prod.groupby(col_jefe_exacta)['NETO'].sum().reset_index().sort_values('NETO', ascending=True)
+            fig_jefe = px.bar(df_jefe, x=col_jefe_exacta, y='NETO', orientation='h', title="Monto Neto por Jefe Zonal (S/)", text_auto=',.0f')
             st.plotly_chart(fig_jefe, use_container_width=True)
 
 with tab4:
