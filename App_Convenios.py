@@ -27,7 +27,7 @@ st.markdown("### **Coalition Group — Matriz de Colocaciones, Remesas y Proyecc
 st.markdown("---")
 
 # ==========================================
-# 1. CARGA Y LIMPIEZA DE DATOS EXPLICITA
+# 1. CARGA Y LIMPIEZA DE DATOS (FLEXIBLE)
 # ==========================================
 @st.cache_data(ttl=600)
 def cargar_datos_corporativos():
@@ -41,13 +41,12 @@ def cargar_datos_corporativos():
         errors='coerce'
     ).fillna(0)
     
-    # 1. FECHA DE DESEMBOLSO (Para producción)
-    df['FECHA_DESEMBOLSO_DT'] = pd.to_datetime(df['FECHA DE DESEMBOLSO'], format='%d/%m/%Y', errors='coerce')
+    # Lectura flexible de fechas (sin formato rígido para evitar descartar meses)
+    df['FECHA_DESEMBOLSO_DT'] = pd.to_datetime(df['FECHA DE DESEMBOLSO'], errors='coerce')
     df['AÑO_MES_DESEMBOLSO'] = df['FECHA_DESEMBOLSO_DT'].dt.to_period('M').astype(str)
     df['FECHA_DESEMBOLSO_CORTE'] = df['FECHA_DESEMBOLSO_DT'].dt.date
 
-    # 2. FECHA DE SOLICITUD (Pura para Remesas - Mismo criterio que Excel)
-    df['FECHA_SOLICITUD_DT'] = pd.to_datetime(df['FECHA DE SOLICITUD'], format='%d/%m/%Y', errors='coerce')
+    df['FECHA_SOLICITUD_DT'] = pd.to_datetime(df['FECHA DE SOLICITUD'], errors='coerce')
     df['AÑO_MES_SOLICITUD'] = df['FECHA_SOLICITUD_DT'].dt.to_period('M').astype(str)
     df['FECHA_SOLICITUD_CORTE'] = df['FECHA_SOLICITUD_DT'].dt.date
     
@@ -105,7 +104,8 @@ with f_col1:
     )
 
 with f_col2:
-    meses_des_disp = sorted([m for m in df_flt['AÑO_MES_DESEMBOLSO'].dropna().unique() if m != 'NaT']) if not df_flt.empty else []
+    # Opciones basadas en toda la base base para mostrar siempre todo el histórico
+    meses_des_disp = sorted([m for m in df_base['AÑO_MES_DESEMBOLSO'].dropna().unique() if m != 'NaT'])
     sel_meses_desembolso = st.multiselect(
         "🗓️ Meses Desembolso (Producción)", 
         options=meses_des_disp, 
@@ -113,14 +113,14 @@ with f_col2:
     )
 
 with f_col3:
-    meses_sol_disp = sorted([m for m in df_flt['AÑO_MES_SOLICITUD'].dropna().unique() if m != 'NaT']) if not df_flt.empty else []
+    meses_sol_disp = sorted([m for m in df_base['AÑO_MES_SOLICITUD'].dropna().unique() if m != 'NaT'])
     sel_meses_remesa = st.multiselect(
         "📥 Mes de Remesa (Fecha Solicitud)", 
         options=meses_sol_disp, 
         default=[]
     )
 
-# --- FILTRADO PARA PESTAÑA PRODUCCIÓN (FECHA DE DESEMBOLSO) ---
+# --- FILTRADO PARA PESTAÑA PRODUCCIÓN ---
 df_flt_prod = df_flt.copy()
 
 if sel_estados:
@@ -129,13 +129,10 @@ if sel_estados:
 if sel_meses_desembolso:
     df_flt_prod = df_flt_prod[df_flt_prod['AÑO_MES_DESEMBOLSO'].isin(sel_meses_desembolso)]
 
-# --- FILTRADO EXCLUSIVO Y PURO PARA REMESAS (FECHA DE SOLICITUD) ---
+# --- FILTRADO EXCLUSIVO Y PURO PARA REMESAS ---
 df_remesas = df_flt.copy()
-
-# Filtrar solo registros que tengan fecha de solicitud real
 df_remesas = df_remesas[df_remesas['FECHA_SOLICITUD_DT'].notna()]
 
-# Filtro por Meses de Remesa (Fecha Solicitud)
 if sel_meses_remesa:
     df_remesas = df_remesas[df_remesas['AÑO_MES_SOLICITUD'].isin(sel_meses_remesa)]
 
@@ -201,19 +198,18 @@ with tab1:
     else:
         st.info("No se encontraron registros de producción con los filtros seleccionados.")
 
-# --- PESTAÑA 2: REMESAS (PURA FECHA DE SOLICITUD - EXACTO COMO EN EXCEL) ---
+# --- PESTAÑA 2: REMESAS (HISTÓRICO COMPLETO POR FECHA DE SOLICITUD) ---
 with tab2:
     st.subheader("📦 Conteo Exacto de Remesas por Fecha de Solicitud")
-    st.markdown("Contabiliza las filas de la hoja de cálculo usando estrictamente la columna **`FECHA DE SOLICITUD`**.")
+    st.markdown("Contabiliza el total de filas de la hoja de cálculo usando exclusivamente la columna **`FECHA DE SOLICITUD`** para todo el histórico.")
 
     rem_total_ops = len(df_remesas)
     rem_dias_sol = df_remesas['FECHA_SOLICITUD_CORTE'].nunique() if not df_remesas.empty else 0
     rem_prom_diario_ops = rem_total_ops / rem_dias_sol if rem_dias_sol > 0 else 0
     rem_total_monto = df_remesas['NETO'].sum() if not df_remesas.empty else 0
 
-    # KPIs de Remesas Puras
     r_kpi1, r_kpi2, r_kpi3, r_kpi4 = st.columns(4)
-    r_kpi1.metric("📥 Total Remesas (Filas Solicitadas)", f"{rem_total_ops:,} Ops")
+    r_kpi1.metric("📥 Total Remesas Solicitadas", f"{rem_total_ops:,} Ops")
     r_kpi2.metric("📊 Promedio Diario de Solicitudes", f"{rem_prom_diario_ops:,.1f} Ops/Día")
     r_kpi3.metric("🗓️ Días Con Solicitudes", f"{rem_dias_sol:,} Días")
     r_kpi4.metric("💰 Monto Referencial Solicitado", formato_compacto_limpio(rem_total_monto))
@@ -232,7 +228,7 @@ with tab2:
                 x='AÑO_MES_SOLICITUD',
                 y='CANTIDAD_SOLICITUDES',
                 text='CANTIDAD_SOLICITUDES',
-                title="Conteo de Remesas por Mes de Solicitud (Sincronizado con Excel)",
+                title="Evolución Histórica Completa de Remesas por Mes de Solicitud",
                 labels={'AÑO_MES_SOLICITUD': 'Mes de Solicitud', 'CANTIDAD_SOLICITUDES': 'N° de Solicitudes'},
                 color_discrete_sequence=['#0d9488']
             )
@@ -240,7 +236,7 @@ with tab2:
             fig_rem_bar.update_layout(height=450, xaxis_tickangle=-45)
             st.plotly_chart(fig_rem_bar, use_container_width=True)
         else:
-            st.info("No hay remesas registradas para los meses seleccionados.")
+            st.info("No hay remesas registradas para los filtros seleccionados.")
 
     with col_r2:
         if not df_remesas.empty:
