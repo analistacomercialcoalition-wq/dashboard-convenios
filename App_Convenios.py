@@ -30,7 +30,7 @@ st.markdown("""
             color: #FFFFFF !important;
         }
         
-        /* Estilos de texto e íconos dentro del Sidebar */
+        /* Estilos de texto dentro del Sidebar */
         [data-testid="stSidebar"] h1, 
         [data-testid="stSidebar"] h2, 
         [data-testid="stSidebar"] h3, 
@@ -54,13 +54,13 @@ st.markdown("""
             font-weight: 700 !important;
         }
 
-        /* Títulos e Historial */
+        /* Títulos */
         h1, h2, h3 {
             color: #0F172A !important;
             font-weight: 800 !important;
         }
 
-        /* Estilo de la divisoria */
+        /* Línea divisoria */
         hr {
             border-color: #CBD5E1 !important;
         }
@@ -68,15 +68,19 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
+# DETECCIÓN DE IMAGEN LOGO CORPORATIVO
+# ==========================================
+posibles_logos = ["Convenios Coalition.png", "Convenios Coalition.jpg", "logo.png", "logo.jpg"]
+logo_encontrado = next((img for img in posibles_logos if os.path.exists(img)), None)
+
+# ==========================================
 # CABECERA CON LOGO Y TÍTULO
 # ==========================================
 col_logo, col_tit = st.columns([1, 5])
 
 with col_logo:
-    if os.path.exists("Convenios Coalition.jpg"):
-        st.image("Convenios Coalition.jpg", width=140)
-    elif os.path.exists("logo.jpg"):
-        st.image("logo.jpg", width=140)
+    if logo_encontrado:
+        st.image(logo_encontrado, width=130)
     else:
         st.markdown("## 🦁")
 
@@ -87,7 +91,7 @@ with col_tit:
 st.markdown("---")
 
 # ==========================================
-# 1. CARGA Y LIMPIEZA DE DATOS
+# 1. CARGA Y LIMPIEZA DE DATOS (INCLUYE TERRITORIAL)
 # ==========================================
 @st.cache_data(ttl=600)
 def cargar_datos_corporativos():
@@ -101,8 +105,8 @@ def cargar_datos_corporativos():
         errors='coerce'
     ).fillna(0)
 
-    # Limpieza de texto comercial
-    cols_a_limpiar = ['ZONA', 'PLAZA', 'JEFE ZONAL', 'SUPERVISOR', 'ASESOR CORRECTO', 'ESTADO']
+    # Limpieza rigurosa de texto incluyendo TERRITORIAL
+    cols_a_limpiar = ['TERRITORIAL', 'ZONA', 'PLAZA', 'JEFE ZONAL', 'SUPERVISOR', 'ASESOR CORRECTO', 'ESTADO']
     for col in cols_a_limpiar:
         if col in df.columns:
             df[col] = df[col].fillna('').astype(str).str.strip().str.upper()
@@ -137,7 +141,7 @@ def cargar_datos_corporativos():
     
     return df
 
-with st.spinner("Cargando matriz corporativa Coalition..."):
+with st.spinner("Sincronizando matriz corporativa Coalition..."):
     df_base = cargar_datos_corporativos()
 
 def obtener_opciones_limpias(df_in, col_name):
@@ -147,12 +151,10 @@ def obtener_opciones_limpias(df_in, col_name):
     return []
 
 # ==========================================
-# 2. FILTROS EN BARRA LATERAL AZUL OSCURO
+# 2. FILTROS EN BARRA LATERAL (JERARQUÍA COMPLETA)
 # ==========================================
-if os.path.exists("Convenios Coalition.jpg"):
-    st.sidebar.image("Convenios Coalition.jpg", use_column_width=True)
-elif os.path.exists("logo.jpg"):
-    st.sidebar.image("logo.jpg", use_column_width=True)
+if logo_encontrado:
+    st.sidebar.image(logo_encontrado, use_column_width=True)
 
 st.sidebar.markdown("<h2 style='color: #D97706; text-align: center;'>CONVENIOS COALITION</h2>", unsafe_allow_html=True)
 st.sidebar.markdown("---")
@@ -160,27 +162,39 @@ st.sidebar.subheader("🏢 Estructura Comercial")
 
 df_flt_sidebar = df_base.copy()
 
+# 1. TERRITORIAL (NUEVO FILTRO SUPERIOR)
+col_territorial = 'TERRITORIAL' if 'TERRITORIAL' in df_base.columns else None
+territoriales = ["TODOS"] + (obtener_opciones_limpias(df_flt_sidebar, col_territorial) if col_territorial else [])
+sel_territorial = st.sidebar.selectbox("Territorial", territoriales)
+if sel_territorial != "TODOS" and col_territorial:
+    df_flt_sidebar = df_flt_sidebar[df_flt_sidebar[col_territorial] == sel_territorial]
+
+# 2. ZONA
 zonas = ["TODAS"] + obtener_opciones_limpias(df_flt_sidebar, 'ZONA')
 sel_zona = st.sidebar.selectbox("Zona", zonas)
 if sel_zona != "TODAS":
     df_flt_sidebar = df_flt_sidebar[df_flt_sidebar['ZONA'] == sel_zona]
 
+# 3. PLAZA
 plazas = ["TODAS"] + obtener_opciones_limpias(df_flt_sidebar, 'PLAZA')
 sel_plaza = st.sidebar.selectbox("Plaza", plazas)
 if sel_plaza != "TODAS":
     df_flt_sidebar = df_flt_sidebar[df_flt_sidebar['PLAZA'] == sel_plaza]
 
-col_jefe_exacta = 'JEFE ZONAL' if 'JEFE ZONAL' in df_base.columns else ('JDN' if 'JDN' in df_base.columns else None)
+# 4. JEFE ZONAL (ESTRICTO)
+col_jefe_exacta = 'JEFE ZONAL' if 'JEFE ZONAL' in df_base.columns else None
 jefes = ["TODOS"] + (obtener_opciones_limpias(df_flt_sidebar, col_jefe_exacta) if col_jefe_exacta else [])
 sel_jefe = st.sidebar.selectbox("Jefe Zonal", jefes)
 if sel_jefe != "TODOS" and col_jefe_exacta:
     df_flt_sidebar = df_flt_sidebar[df_flt_sidebar[col_jefe_exacta] == sel_jefe]
 
+# 5. SUPERVISOR
 supervisores = ["TODOS"] + obtener_opciones_limpias(df_flt_sidebar, 'SUPERVISOR')
 sel_sup = st.sidebar.selectbox("Supervisor", supervisores)
 if sel_sup != "TODOS" and 'SUPERVISOR' in df_flt_sidebar.columns:
     df_flt_sidebar = df_flt_sidebar[df_flt_sidebar['SUPERVISOR'] == sel_sup]
 
+# 6. ASESOR
 asesores = ["TODOS"] + obtener_opciones_limpias(df_flt_sidebar, 'ASESOR CORRECTO')
 sel_asesor = st.sidebar.selectbox("Asesor", asesores)
 if sel_asesor != "TODOS" and 'ASESOR CORRECTO' in df_flt_sidebar.columns:
@@ -218,12 +232,14 @@ with f_col3:
         default=[]
     )
 
+# --- FILTRADO PRODUCCIÓN ---
 df_flt_prod = df_flt.copy()
 if sel_estados_prod:
     df_flt_prod = df_flt_prod[df_flt_prod['ESTADO'].isin(sel_estados_prod)]
 if sel_meses_desembolso:
     df_flt_prod = df_flt_prod[df_flt_prod['AÑO_MES_DESEMBOLSO'].isin(sel_meses_desembolso)]
 
+# --- FILTRADO REMESAS ---
 df_remesas = df_flt.copy()
 if sel_meses_remesa:
     df_remesas = df_remesas[df_remesas['AÑO_MES_SOLICITUD'].isin(sel_meses_remesa)]
