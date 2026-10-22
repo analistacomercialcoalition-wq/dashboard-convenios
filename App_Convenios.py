@@ -151,52 +151,59 @@ def obtener_opciones_limpias(df_in, col_name):
     return []
 
 # ==========================================
-# 2. SISTEMA DE SEGURIDAD Y PERMISOS POR USUARIO (RLS)
+# 2. SISTEMA DE AUTENTICACIÓN Y SEGURIDAD (CORREO + CONTRASEÑA)
 # ==========================================
 if logo_encontrado:
     st.sidebar.image(logo_encontrado, use_column_width=True)
 
 st.sidebar.markdown("<h2 style='color: #D97706; text-align: center;'>CONVENIOS COALITION</h2>", unsafe_allow_html=True)
 st.sidebar.markdown("---")
-st.sidebar.subheader("🔐 Autenticación de Usuario")
+st.sidebar.subheader("🔐 Credenciales de Acceso")
 
-# Matriz de permisos corporativa (puedes agregar los correos y territoriales que gustes)
-PERMISOS_TERRITORIAL = {
-    "luigi.socca@coalition.com.pe": "TODAS",
-    "lasb1406891@gmail.com": "TODAS",
-    # Ejemplos de asignación por territorial:
-    # "supervisor.norte@coalition.com.pe": "NORTE",
-    # "supervisor.sur@coalition.com.pe": "SUR",
+# Base de datos segura de usuarios corporativos y contraseñas
+CREDENCIALES_USUARIOS = {
+    "luigi.socca@coalition.com.pe": {
+        "password": "45775003",
+        "territorial": "TODAS"
+    },
+    "enrique.ciudad@coalition.com.pe": {
+        "password": "12345678",
+        "territorial": "ENRIQUE CIUDAD"
+    }
 }
 
 input_correo = st.sidebar.text_input("Correo Corporativo:", value="luigi.socca@coalition.com.pe").strip().lower()
+input_pass = st.sidebar.text_input("Contraseña:", type="password", value="45775003").strip()
 
-territorial_permitida = PERMISOS_TERRITORIAL.get(input_correo, None)
+# Validación de seguridad
+usuario_info = CREDENCIALES_USUARIOS.get(input_correo, None)
 
-if territorial_permitida is None:
-    st.sidebar.error("⚠️ Correo no autorizado en el sistema.")
+if usuario_info is None or usuario_info["password"] != input_pass:
+    st.sidebar.error("⚠️ Correo o contraseña incorrectos.")
     st.stop()
 
-# Filtrar base de datos según los permisos del usuario logueado
+territorial_asignada = usuario_info["territorial"]
 df_flt_sidebar = df_base.copy()
-if territorial_permitida != "TODAS":
-    df_flt_sidebar = df_flt_sidebar[df_flt_sidebar['TERRITORIAL'] == territorial_permitida]
-    st.sidebar.info(f"📌 Acceso restringido a Territorial: **{territorial_permitida}**")
+
+if territorial_asignada != "TODAS":
+    df_flt_sidebar = df_flt_sidebar[df_flt_sidebar['TERRITORIAL'] == territorial_asignada]
+    st.sidebar.info(f"📌 Acceso exclusivo a Territorial: **{territorial_asignada}**")
 else:
     st.sidebar.success("👑 Acceso Gerencial Total (Todas las Territoriales)")
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("🏢 Estructura Comercial")
 
-# 1. TERRITORIAL (Bloqueado si el usuario tiene una territorial fija asignada)
+# 1. TERRITORIAL
 col_territorial = 'TERRITORIAL' if 'TERRITORIAL' in df_base.columns else None
-if territorial_permitida == "TODAS":
+if territorial_asignada == "TODAS":
     territoriales = ["TODOS"] + (obtener_opciones_limpias(df_flt_sidebar, col_territorial) if col_territorial else [])
     sel_territorial = st.sidebar.selectbox("Territorial", territoriales)
     if sel_territorial != "TODOS" and col_territorial:
         df_flt_sidebar = df_flt_sidebar[df_flt_sidebar[col_territorial] == sel_territorial]
 else:
-    sel_territorial = territorial_permitida
+    st.sidebar.selectbox("Territorial", [territorial_asignada], disabled=True)
+    sel_territorial = territorial_asignada
 
 # 2. ZONA
 zonas = ["TODAS"] + obtener_opciones_limpias(df_flt_sidebar, 'ZONA')
