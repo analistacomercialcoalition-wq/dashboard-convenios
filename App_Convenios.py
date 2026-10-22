@@ -26,38 +26,45 @@ st.markdown("### **Coalition Group — Matriz de Colocaciones, Remesas y Proyecc
 st.markdown("---")
 
 # ==========================================
-# 1. CARGA Y LIMPIEZA DE DATOS (LECTURA PERUANA DD/MM/YYYY)
+# 1. CARGA Y PARSEO ROBUSTO DE DATO (SIN PERDER NINGUNA FILA)
 # ==========================================
 @st.cache_data(ttl=600)
 def cargar_datos_corporativos():
     sheet_url = "https://docs.google.com/spreadsheets/d/1IBvyIN5H1jYrwEAOD9E5nTCpaBLqxD109HMKCW0Ezt8/gviz/tq?tqx=out:csv&sheet=Hoja%201"
-    df = pd.read_csv(sheet_url)
+    df = pd.read_csv(sheet_url, dtype=str) # Cargar todo como string inicial para no perder nada
     df.columns = df.columns.str.strip()
     
-    # Limpieza de montos netos
+    # Clean NETO
     df['NETO'] = pd.to_numeric(
         df['NETO'].astype(str).str.replace(',', '').str.replace('S/', '').str.replace(' ', '').str.strip(), 
         errors='coerce'
     ).fillna(0)
+
+    # Función ultra robusta para obtener Año-Mes de cualquier texto de fecha
+    def extraer_ano_mes(val):
+        if pd.isna(val) or not str(val).strip():
+            return 'DESCONOCIDO'
+        val_str = str(val).strip().split(' ')[0] # Quitar hora si tuviera
+        partes = val_str.replace('-', '/').split('/')
+        if len(partes) == 3:
+            # Asumir DD/MM/YYYY
+            dia, mes, ano = partes[0].zfill(2), partes[1].zfill(2), partes[2]
+            if len(ano) == 2:
+                ano = '20' + ano
+            return f"{ano}-{mes}"
+        return 'DESCONOCIDO'
+
+    # Extracción de Año-Mes
+    df['AÑO_MES_DESEMBOLSO'] = df['FECHA DE DESEMBOLSO'].apply(extraer_ano_mes)
+    df['AÑO_MES_SOLICITUD'] = df['FECHA DE SOLICITUD'].apply(extraer_ano_mes)
     
-    # Lectura de Fecha de Desembolso (DD/MM/YYYY)
-    df['FECHA_DESEMBOLSO_DT'] = pd.to_datetime(df['FECHA DE DESEMBOLSO'], format='%d/%m/%Y', errors='coerce')
-    df['AÑO_MES_DESEMBOLSO'] = df['FECHA_DESEMBOLSO_DT'].dt.to_period('M').astype(str)
-    df['FECHA_DESEMBOLSO_CORTE'] = df['FECHA_DESEMBOLSO_DT'].dt.date
-
-    # Lectura de Fecha de Solicitud (DD/MM/YYYY) - Estricto Perú
-    df['FECHA_SOLICITUD_DT'] = pd.to_datetime(df['FECHA DE SOLICITUD'], format='%d/%m/%Y', errors='coerce')
-    # Fallback si algunas celdas vienen en otro formato
-    mask_null = df['FECHA_SOLICITUD_DT'].isna() & df['FECHA DE SOLICITUD'].notna()
-    if mask_null.any():
-        df.loc[mask_null, 'FECHA_SOLICITUD_DT'] = pd.to_datetime(df.loc[mask_null, 'FECHA DE SOLICITUD'], dayfirst=True, errors='coerce')
-
-    df['AÑO_MES_SOLICITUD'] = df['FECHA_SOLICITUD_DT'].dt.to_period('M').astype(str)
-    df['FECHA_SOLICITUD_CORTE'] = df['FECHA_SOLICITUD_DT'].dt.date
+    # Fechas Datetime secundarias para ordenamiento
+    df['FECHA_DESEMBOLSO_DT'] = pd.to_datetime(df['FECHA DE DESEMBOLSO'], dayfirst=True, errors='coerce')
+    df['FECHA_SOLICITUD_DT'] = pd.to_datetime(df['FECHA DE SOLICITUD'], dayfirst=True, errors='coerce')
     
     return df
 
-with st.spinner("Sincronizando base de datos corporativa..."):
+with st.spinner("Sincronizando base de datos corporativa completa..."):
     df_base = cargar_datos_corporativos()
 
 # ==========================================
@@ -66,19 +73,20 @@ with st.spinner("Sincronizando base de datos corporativa..."):
 st.sidebar.header("🔍 Panel de Filtros y Control")
 st.sidebar.subheader("🏢 Estructura Comercial")
 
-zonas = ["TODAS"] + sorted(list(df_base['ZONA'].dropna().unique()))
+zonas = ["TODAS"] + sorted([x for x in df_base['ZONA'].dropna().unique() if x != 'nan'])
 sel_zona = st.sidebar.selectbox("Zona", zonas)
 
-plazas = ["TODAS"] + sorted(list(df_base['PLAZA'].dropna().unique()))
+plazas = ["TODAS"] + sorted([x for x in df_base['PLAZA'].dropna().unique() if x != 'nan'])
 sel_plaza = st.sidebar.selectbox("Plaza", plazas)
 
-jefes = ["TODOS"] + sorted(list(df_base['JDN'].dropna().unique()) if 'JDN' in df_base.columns else list(df_base['JEFE ZONAL'].dropna().unique()))
+col_jefe_nom = 'JDN' if 'JDN' in df_base.columns else 'JEFE ZONAL'
+jefes = ["TODOS"] + sorted([x for x in df_base[col_jefe_nom].dropna().unique() if x != 'nan'])
 sel_jefe = st.sidebar.selectbox("Jefe Zonal / JDN", jefes)
 
-supervisores = ["TODOS"] + sorted(list(df_base['SUPERVISOR'].dropna().unique())) if 'SUPERVISOR' in df_base.columns else ["TODOS"]
+supervisores = ["TODOS"] + (sorted([x for x in df_base['SUPERVISOR'].dropna().unique() if x != 'nan']) if 'SUPERVISOR' in df_base.columns else [])
 sel_sup = st.sidebar.selectbox("Supervisor", supervisores)
 
-asesores = ["TODOS"] + sorted(list(df_base['ASESOR CORRECTO'].dropna().unique())) if 'ASESOR CORRECTO' in df_base.columns else ["TODOS"]
+asesores = ["TODOS"] + (sorted([x for x in df_base['ASESOR CORRECTO'].dropna().unique() if x != 'nan']) if 'ASESOR CORRECTO' in df_base.columns else [])
 sel_asesor = st.sidebar.selectbox("Asesor", asesores)
 
 df_flt = df_base.copy()
@@ -87,8 +95,7 @@ if sel_zona != "TODAS":
 if sel_plaza != "TODAS":
     df_flt = df_flt[df_flt['PLAZA'] == sel_plaza]
 if sel_jefe != "TODOS":
-    col_j = 'JDN' if 'JDN' in df_flt.columns else 'JEFE ZONAL'
-    df_flt = df_flt[df_flt[col_j] == sel_jefe]
+    df_flt = df_flt[df_flt[col_jefe_nom] == sel_jefe]
 if sel_sup != "TODOS" and 'SUPERVISOR' in df_flt.columns:
     df_flt = df_flt[df_flt['SUPERVISOR'] == sel_sup]
 if sel_asesor != "TODOS" and 'ASESOR CORRECTO' in df_flt.columns:
@@ -101,15 +108,15 @@ st.markdown("### 🎛️ Filtros de Control Temporal y Estado")
 f_col1, f_col2, f_col3 = st.columns(3)
 
 with f_col1:
-    estados_disp = sorted(list(df_flt['ESTADO'].dropna().unique())) if not df_flt.empty else []
+    estados_disp = sorted([x for x in df_flt['ESTADO'].dropna().unique() if x != 'nan'])
     sel_estados_prod = st.multiselect(
-        "📌 Estado de Operación (Para Producción Desembolsada)", 
+        "📌 Estado Operación (Filtro Producción)", 
         options=estados_disp, 
         default=["DESEMBOLSADO"] if "DESEMBOLSADO" in estados_disp else []
     )
 
 with f_col2:
-    meses_des_disp = sorted([m for m in df_base['AÑO_MES_DESEMBOLSO'].dropna().unique() if m != 'NaT'])
+    meses_des_disp = sorted([m for m in df_base['AÑO_MES_DESEMBOLSO'].unique() if m != 'DESCONOCIDO'])
     sel_meses_desembolso = st.multiselect(
         "🗓️ Meses Desembolso (Filtro Producción)", 
         options=meses_des_disp, 
@@ -117,26 +124,23 @@ with f_col2:
     )
 
 with f_col3:
-    meses_sol_disp = sorted([m for m in df_base['AÑO_MES_SOLICITUD'].dropna().unique() if m != 'NaT'])
+    meses_sol_disp = sorted([m for m in df_base['AÑO_MES_SOLICITUD'].unique() if m != 'DESCONOCIDO'])
     sel_meses_remesa = st.multiselect(
-        "📥 Filtrar Meses de Solicitud (Remesas)", 
+        "📥 Filtrar Meses de Remesa (Fecha Solicitud)", 
         options=meses_sol_disp, 
         default=[]
     )
 
-# --- FILTRADO PARA PESTAÑA PRODUCCIÓN ---
+# --- FILTRADO PARA PRODUCCIÓN ---
 df_flt_prod = df_flt.copy()
-
 if sel_estados_prod:
     df_flt_prod = df_flt_prod[df_flt_prod['ESTADO'].isin(sel_estados_prod)]
-
 if sel_meses_desembolso:
     df_flt_prod = df_flt_prod[df_flt_prod['AÑO_MES_DESEMBOLSO'].isin(sel_meses_desembolso)]
 
-# --- FILTRADO PARA PESTAÑA REMESAS (PURA Y COMPLETA) ---
+# --- FILTRADO PARA REMESAS (REMESAS PURAS) ---
 df_remesas = df_flt.copy()
-df_remesas = df_remesas[df_remesas['FECHA_SOLICITUD_DT'].notna()]
-
+df_remesas = df_remesas[df_remesas['AÑO_MES_SOLICITUD'] != 'DESCONOCIDO']
 if sel_meses_remesa:
     df_remesas = df_remesas[df_remesas['AÑO_MES_SOLICITUD'].isin(sel_meses_remesa)]
 
@@ -156,7 +160,7 @@ def formato_compacto_limpio(val):
 # ==========================================
 total_neto = df_flt_prod['NETO'].sum() if not df_flt_prod.empty else 0
 total_ops = len(df_flt_prod)
-dias_efectivos = df_flt_prod['FECHA_DESEMBOLSO_CORTE'].nunique() if not df_flt_prod.empty else 0
+dias_efectivos = df_flt_prod['FECHA DE DESEMBOLSO'].nunique() if not df_flt_prod.empty else 0
 prom_diario = total_neto / dias_efectivos if dias_efectivos > 0 else 0
 
 kpi1, kpi2, kpi3, kpi4 = st.columns(4)
@@ -169,8 +173,7 @@ st.markdown("---")
 
 df_mensual = df_flt_prod.groupby('AÑO_MES_DESEMBOLSO').agg(
     MONTO_TOTAL_NETO=('NETO', 'sum'),
-    OPERACIONES=('NETO', 'count'),
-    DIAS_TRABAJADOS=('FECHA_DESEMBOLSO_CORTE', 'nunique')
+    OPERACIONES=('NETO', 'count')
 ).reset_index() if not df_flt_prod.empty else pd.DataFrame()
 
 # ==========================================
@@ -204,19 +207,19 @@ with tab1:
 
 # --- PESTAÑA 2: REMESAS (PURA Y COMPLETA POR FECHA DE SOLICITUD) ---
 with tab2:
-    st.subheader("📦 Conteo Total de Remesas por Fecha de Solicitud")
-    st.markdown("Contabiliza el total de filas registradas en la hoja de cálculo por su **Fecha de Solicitud**.")
+    st.subheader("📦 Conteo Total de Remesas por Fecha de Solicitud (Matriz Completa)")
+    st.markdown("Contabiliza de forma exacta las filas de la hoja de cálculo agrupadas por su **`FECHA DE SOLICITUD`**.")
 
-    # Filtro opcional por estado exclusivo dentro de la pestaña de remesas
-    est_rem_disp = ["TODOS"] + sorted(list(df_remesas['ESTADO'].dropna().unique()))
-    sel_est_rem = st.selectbox("📌 Filtrar por Estado específico en Remesas (Opcional):", est_rem_disp)
+    # Filtro interno opcional de Estado
+    est_rem_disp = ["TODOS"] + sorted([x for x in df_remesas['ESTADO'].dropna().unique() if x != 'nan'])
+    sel_est_rem = st.selectbox("📌 Filtrar Estado interno en Remesas (Opcional):", est_rem_disp)
     
     df_rem_tab = df_remesas.copy()
     if sel_est_rem != "TODOS":
         df_rem_tab = df_rem_tab[df_rem_tab['ESTADO'] == sel_est_rem]
 
     rem_total_ops = len(df_rem_tab)
-    rem_dias_sol = df_rem_tab['FECHA_SOLICITUD_CORTE'].nunique() if not df_rem_tab.empty else 0
+    rem_dias_sol = df_rem_tab['FECHA DE SOLICITUD'].nunique() if not df_rem_tab.empty else 0
     rem_prom_diario_ops = rem_total_ops / rem_dias_sol if rem_dias_sol > 0 else 0
     rem_total_monto = df_rem_tab['NETO'].sum() if not df_rem_tab.empty else 0
 
@@ -224,7 +227,7 @@ with tab2:
     r_kpi1.metric("📥 Total Remesas (Solicitudes)", f"{rem_total_ops:,} Ops")
     r_kpi2.metric("📊 Promedio Diario de Solicitudes", f"{rem_prom_diario_ops:,.1f} Ops/Día")
     r_kpi3.metric("🗓️ Días Con Solicitudes", f"{rem_dias_sol:,} Días")
-    r_kpi4.metric("💰 Monto Total Solicitado", formato_compacto_limpio(rem_total_monto))
+    r_kpi4.metric("💰 Monto Referencial Solicitado", formato_compacto_limpio(rem_total_monto))
 
     st.markdown("---")
 
@@ -233,7 +236,7 @@ with tab2:
     with col_r1:
         if not df_rem_tab.empty:
             df_rem_mensual = df_rem_tab.groupby('AÑO_MES_SOLICITUD').size().reset_index(name='CANTIDAD_SOLICITUDES')
-            df_rem_mensual = df_rem_mensual[df_rem_mensual['AÑO_MES_SOLICITUD'] != 'NaT'].sort_values('AÑO_MES_SOLICITUD')
+            df_rem_mensual = df_rem_mensual.sort_values('AÑO_MES_SOLICITUD')
 
             fig_rem_bar = px.bar(
                 df_rem_mensual,
@@ -277,9 +280,8 @@ with tab3:
             st.plotly_chart(fig_plz, use_container_width=True)
     with col_b:
         if not df_flt_prod.empty:
-            col_j = 'JDN' if 'JDN' in df_flt_prod.columns else 'JEFE ZONAL'
-            df_jefe = df_flt_prod.groupby(col_j)['NETO'].sum().reset_index().sort_values('NETO', ascending=True)
-            fig_jefe = px.bar(df_jefe, x=col_j, y='NETO', orientation='h', title="Monto Neto por Jefe Zonal / JDN (S/)", text_auto=',.0f')
+            df_jefe = df_flt_prod.groupby(col_jefe_nom)['NETO'].sum().reset_index().sort_values('NETO', ascending=True)
+            fig_jefe = px.bar(df_jefe, x=col_jefe_nom, y='NETO', orientation='h', title="Monto Neto por Jefe Zonal / JDN (S/)", text_auto=',.0f')
             st.plotly_chart(fig_jefe, use_container_width=True)
 
 # --- PESTAÑA 4: MONTE CARLO ---
