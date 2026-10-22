@@ -151,23 +151,52 @@ def obtener_opciones_limpias(df_in, col_name):
     return []
 
 # ==========================================
-# 2. FILTROS EN BARRA LATERAL (JERARQUÍA COMPLETA)
+# 2. SISTEMA DE SEGURIDAD Y PERMISOS POR USUARIO (RLS)
 # ==========================================
 if logo_encontrado:
     st.sidebar.image(logo_encontrado, use_column_width=True)
 
 st.sidebar.markdown("<h2 style='color: #D97706; text-align: center;'>CONVENIOS COALITION</h2>", unsafe_allow_html=True)
 st.sidebar.markdown("---")
+st.sidebar.subheader("🔐 Autenticación de Usuario")
+
+# Matriz de permisos corporativa (puedes agregar los correos y territoriales que gustes)
+PERMISOS_TERRITORIAL = {
+    "luigi.socca@coalition.com.pe": "TODAS",
+    "lasb1406891@gmail.com": "TODAS",
+    # Ejemplos de asignación por territorial:
+    # "supervisor.norte@coalition.com.pe": "NORTE",
+    # "supervisor.sur@coalition.com.pe": "SUR",
+}
+
+input_correo = st.sidebar.text_input("Correo Corporativo:", value="luigi.socca@coalition.com.pe").strip().lower()
+
+territorial_permitida = PERMISOS_TERRITORIAL.get(input_correo, None)
+
+if territorial_permitida is None:
+    st.sidebar.error("⚠️ Correo no autorizado en el sistema.")
+    st.stop()
+
+# Filtrar base de datos según los permisos del usuario logueado
+df_flt_sidebar = df_base.copy()
+if territorial_permitida != "TODAS":
+    df_flt_sidebar = df_flt_sidebar[df_flt_sidebar['TERRITORIAL'] == territorial_permitida]
+    st.sidebar.info(f"📌 Acceso restringido a Territorial: **{territorial_permitida}**")
+else:
+    st.sidebar.success("👑 Acceso Gerencial Total (Todas las Territoriales)")
+
+st.sidebar.markdown("---")
 st.sidebar.subheader("🏢 Estructura Comercial")
 
-df_flt_sidebar = df_base.copy()
-
-# 1. TERRITORIAL (NUEVO FILTRO SUPERIOR)
+# 1. TERRITORIAL (Bloqueado si el usuario tiene una territorial fija asignada)
 col_territorial = 'TERRITORIAL' if 'TERRITORIAL' in df_base.columns else None
-territoriales = ["TODOS"] + (obtener_opciones_limpias(df_flt_sidebar, col_territorial) if col_territorial else [])
-sel_territorial = st.sidebar.selectbox("Territorial", territoriales)
-if sel_territorial != "TODOS" and col_territorial:
-    df_flt_sidebar = df_flt_sidebar[df_flt_sidebar[col_territorial] == sel_territorial]
+if territorial_permitida == "TODAS":
+    territoriales = ["TODOS"] + (obtener_opciones_limpias(df_flt_sidebar, col_territorial) if col_territorial else [])
+    sel_territorial = st.sidebar.selectbox("Territorial", territoriales)
+    if sel_territorial != "TODOS" and col_territorial:
+        df_flt_sidebar = df_flt_sidebar[df_flt_sidebar[col_territorial] == sel_territorial]
+else:
+    sel_territorial = territorial_permitida
 
 # 2. ZONA
 zonas = ["TODAS"] + obtener_opciones_limpias(df_flt_sidebar, 'ZONA')
