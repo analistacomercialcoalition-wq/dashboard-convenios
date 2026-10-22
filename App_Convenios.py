@@ -151,7 +151,7 @@ def obtener_opciones_limpias(df_in, col_name):
     return []
 
 # ==========================================
-# 2. SISTEMA DE AUTENTICACIÓN Y SEGURIDAD (CORREO + CONTRASEÑA)
+# 2. SISTEMA DE AUTENTICACIÓN Y SEGURIDAD (CAMPOS VACÍOS)
 # ==========================================
 if logo_encontrado:
     st.sidebar.image(logo_encontrado, use_column_width=True)
@@ -172,10 +172,16 @@ CREDENCIALES_USUARIOS = {
     }
 }
 
-input_correo = st.sidebar.text_input("Correo Corporativo:", value="luigi.socca@coalition.com.pe").strip().lower()
-input_pass = st.sidebar.text_input("Contraseña:", type="password", value="45775003").strip()
+# Campos de inicio de sesión vacíos por defecto
+input_correo = st.sidebar.text_input("Correo Corporativo:", value="").strip().lower()
+input_pass = st.sidebar.text_input("Contraseña:", type="password", value="").strip()
 
-# Validación de seguridad
+# Validación inicial si los campos están vacíos
+if not input_correo or not input_pass:
+    st.sidebar.warning("⚠️ Por favor ingrese su correo y contraseña corporativa para acceder al sistema.")
+    st.stop()
+
+# Validación de seguridad de credenciales
 usuario_info = CREDENCIALES_USUARIOS.get(input_correo, None)
 
 if usuario_info is None or usuario_info["password"] != input_pass:
