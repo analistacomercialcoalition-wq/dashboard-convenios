@@ -27,7 +27,7 @@ st.markdown("### **Coalition Group — Matriz de Colocaciones, Remesas y Proyecc
 st.markdown("---")
 
 # ==========================================
-# 1. CARGA Y LIMPIEZA DE DATOS
+# 1. CARGA Y LIMPIEZA DE DATOS EXPLICITA
 # ==========================================
 @st.cache_data(ttl=600)
 def cargar_datos_corporativos():
@@ -41,22 +41,13 @@ def cargar_datos_corporativos():
         errors='coerce'
     ).fillna(0)
     
-    # Limpieza de Fecha de Desembolso
-    df['FECHA_DT'] = pd.to_datetime(df['FECHA DE DESEMBOLSO'], format='%d/%m/%Y', errors='coerce')
-    
-    # Buscar columna de Fecha de Solicitud
-    col_solicitud = [c for c in df.columns if 'SOLICITUD' in c.upper()]
-    if col_solicitud:
-        df['FECHA_SOLICITUD_DT'] = pd.to_datetime(df[col_solicitud[0]], format='%d/%m/%Y', errors='coerce')
-    else:
-        df['FECHA_SOLICITUD_DT'] = df['FECHA_DT']  # Fallback si no existiera
-        
-    df['AÑO'] = df['FECHA_DT'].dt.year.fillna(0).astype(int)
-    df['MES_NUM'] = df['FECHA_DT'].dt.month.fillna(0).astype(int)
-    df['AÑO_MES'] = df['FECHA_DT'].dt.to_period('M').astype(str)
-    df['FECHA_CORTE'] = df['FECHA_DT'].dt.date
-    
-    # Atributos específicos para Remesas (Fecha de Solicitud)
+    # 1. FECHA DE DESEMBOLSO (Para producción)
+    df['FECHA_DESEMBOLSO_DT'] = pd.to_datetime(df['FECHA DE DESEMBOLSO'], format='%d/%m/%Y', errors='coerce')
+    df['AÑO_MES_DESEMBOLSO'] = df['FECHA_DESEMBOLSO_DT'].dt.to_period('M').astype(str)
+    df['FECHA_DESEMBOLSO_CORTE'] = df['FECHA_DESEMBOLSO_DT'].dt.date
+
+    # 2. FECHA DE SOLICITUD (Pura para Remesas - Mismo criterio que Excel)
+    df['FECHA_SOLICITUD_DT'] = pd.to_datetime(df['FECHA DE SOLICITUD'], format='%d/%m/%Y', errors='coerce')
     df['AÑO_MES_SOLICITUD'] = df['FECHA_SOLICITUD_DT'].dt.to_period('M').astype(str)
     df['FECHA_SOLICITUD_CORTE'] = df['FECHA_SOLICITUD_DT'].dt.date
     
@@ -77,13 +68,13 @@ sel_zona = st.sidebar.selectbox("Zona", zonas)
 plazas = ["TODAS"] + sorted(list(df_base['PLAZA'].dropna().unique()))
 sel_plaza = st.sidebar.selectbox("Plaza", plazas)
 
-jefes = ["TODOS"] + sorted(list(df_base['JEFE ZONAL'].dropna().unique()))
-sel_jefe = st.sidebar.selectbox("Jefe Zonal", jefes)
+jefes = ["TODOS"] + sorted(list(df_base['JDN'].dropna().unique()) if 'JDN' in df_base.columns else list(df_base['JEFE ZONAL'].dropna().unique()))
+sel_jefe = st.sidebar.selectbox("Jefe Zonal / JDN", jefes)
 
-supervisores = ["TODOS"] + sorted(list(df_base['SUPERVISOR'].dropna().unique()))
+supervisores = ["TODOS"] + sorted(list(df_base['SUPERVISOR'].dropna().unique())) if 'SUPERVISOR' in df_base.columns else ["TODOS"]
 sel_sup = st.sidebar.selectbox("Supervisor", supervisores)
 
-asesores = ["TODOS"] + sorted(list(df_base['ASESOR CORRECTO'].dropna().unique()))
+asesores = ["TODOS"] + sorted(list(df_base['ASESOR CORRECTO'].dropna().unique())) if 'ASESOR CORRECTO' in df_base.columns else ["TODOS"]
 sel_asesor = st.sidebar.selectbox("Asesor", asesores)
 
 df_flt = df_base.copy()
@@ -92,10 +83,11 @@ if sel_zona != "TODAS":
 if sel_plaza != "TODAS":
     df_flt = df_flt[df_flt['PLAZA'] == sel_plaza]
 if sel_jefe != "TODOS":
-    df_flt = df_flt[df_flt['JEFE ZONAL'] == sel_jefe]
-if sel_sup != "TODOS":
+    col_j = 'JDN' if 'JDN' in df_flt.columns else 'JEFE ZONAL'
+    df_flt = df_flt[df_flt[col_j] == sel_jefe]
+if sel_sup != "TODOS" and 'SUPERVISOR' in df_flt.columns:
     df_flt = df_flt[df_flt['SUPERVISOR'] == sel_sup]
-if sel_asesor != "TODOS":
+if sel_asesor != "TODOS" and 'ASESOR CORRECTO' in df_flt.columns:
     df_flt = df_flt[df_flt['ASESOR CORRECTO'] == sel_asesor]
 
 # ==========================================
@@ -104,66 +96,48 @@ if sel_asesor != "TODOS":
 st.markdown("### 🎛️ Filtros de Control Temporal y Estado")
 f_col1, f_col2, f_col3 = st.columns(3)
 
-# Rango amplio por defecto
-min_f = df_flt['FECHA_CORTE'].dropna().min() if not df_flt.empty else datetime(2020, 1, 1).date()
-max_f = df_flt['FECHA_CORTE'].dropna().max() if not df_flt.empty else datetime.today().date()
-
 with f_col1:
-    rango_fechas = st.date_input(
-        "📅 Rango Fecha de Referencia",
-        value=(min_f, max_f),
-        min_value=min_f,
-        max_value=max_f
-    )
-
-with f_col2:
     estados_disp = sorted(list(df_flt['ESTADO'].dropna().unique())) if not df_flt.empty else []
     sel_estados = st.multiselect(
         "📌 Estado de Operación (Para Producción)", 
         options=estados_disp, 
-        default=[] # En blanco para no restringir inicialmente
+        default=["DESEMBOLSADO"] if "DESEMBOLSADO" in estados_disp else []
+    )
+
+with f_col2:
+    meses_des_disp = sorted([m for m in df_flt['AÑO_MES_DESEMBOLSO'].dropna().unique() if m != 'NaT']) if not df_flt.empty else []
+    sel_meses_desembolso = st.multiselect(
+        "🗓️ Meses Desembolso (Producción)", 
+        options=meses_des_disp, 
+        default=[]
     )
 
 with f_col3:
-    # Obtener la lista completa de meses ordenados por fecha de solicitud
     meses_sol_disp = sorted([m for m in df_flt['AÑO_MES_SOLICITUD'].dropna().unique() if m != 'NaT']) if not df_flt.empty else []
-    sel_meses = st.multiselect(
-        "🗓️ Meses Específicos de Solicitud", 
+    sel_meses_remesa = st.multiselect(
+        "📥 Mes de Remesa (Fecha Solicitud)", 
         options=meses_sol_disp, 
-        default=[] # En blanco para mostrar TODOS los meses por defecto
+        default=[]
     )
 
-# --- FILTRADO PARA PESTAÑA PRODUCCIÓN ---
+# --- FILTRADO PARA PESTAÑA PRODUCCIÓN (FECHA DE DESEMBOLSO) ---
 df_flt_prod = df_flt.copy()
-
-if isinstance(rango_fechas, (list, tuple)) and len(rango_fechas) == 2:
-    f_ini, f_fin = rango_fechas
-    df_flt_prod = df_flt_prod[(df_flt_prod['FECHA_CORTE'] >= f_ini) & (df_flt_prod['FECHA_CORTE'] <= f_fin)]
 
 if sel_estados:
     df_flt_prod = df_flt_prod[df_flt_prod['ESTADO'].isin(sel_estados)]
 
-if sel_meses:
-    df_flt_prod = df_flt_prod[df_flt_prod['AÑO_MES'].isin(sel_meses)]
+if sel_meses_desembolso:
+    df_flt_prod = df_flt_prod[df_flt_prod['AÑO_MES_DESEMBOLSO'].isin(sel_meses_desembolso)]
 
-# --- FILTRADO PARA PESTAÑA REMESAS (REMESAS COMPLETAS) ---
+# --- FILTRADO EXCLUSIVO Y PURO PARA REMESAS (FECHA DE SOLICITUD) ---
 df_remesas = df_flt.copy()
 
-# Aplicar rango de fechas de solicitud si el usuario seleccionó un rango específico
-if isinstance(rango_fechas, (list, tuple)) and len(rango_fechas) == 2:
-    f_ini, f_fin = rango_fechas
-    df_remesas = df_remesas[
-        (df_remesas['FECHA_SOLICITUD_CORTE'] >= f_ini) & 
-        (df_remesas['FECHA_SOLICITUD_CORTE'] <= f_fin)
-    ]
+# Filtrar solo registros que tengan fecha de solicitud real
+df_remesas = df_remesas[df_remesas['FECHA_SOLICITUD_DT'].notna()]
 
-# Filtrar por estados si el usuario seleccionó alguno en el multiselect
-if sel_estados:
-    df_remesas = df_remesas[df_remesas['ESTADO'].isin(sel_estados)]
-
-# Filtrar por meses de solicitud si el usuario seleccionó alguno
-if sel_meses:
-    df_remesas = df_remesas[df_remesas['AÑO_MES_SOLICITUD'].isin(sel_meses)]
+# Filtro por Meses de Remesa (Fecha Solicitud)
+if sel_meses_remesa:
+    df_remesas = df_remesas[df_remesas['AÑO_MES_SOLICITUD'].isin(sel_meses_remesa)]
 
 st.markdown("---")
 
@@ -181,7 +155,7 @@ def formato_compacto_limpio(val):
 # ==========================================
 total_neto = df_flt_prod['NETO'].sum() if not df_flt_prod.empty else 0
 total_ops = len(df_flt_prod)
-dias_efectivos = df_flt_prod['FECHA_CORTE'].nunique() if not df_flt_prod.empty else 0
+dias_efectivos = df_flt_prod['FECHA_DESEMBOLSO_CORTE'].nunique() if not df_flt_prod.empty else 0
 prom_diario = total_neto / dias_efectivos if dias_efectivos > 0 else 0
 
 kpi1, kpi2, kpi3, kpi4 = st.columns(4)
@@ -192,10 +166,10 @@ kpi4.metric("📈 Prom. Diario / Ticket", f"{formato_compacto_limpio(prom_diario
 
 st.markdown("---")
 
-df_mensual = df_flt_prod.groupby('AÑO_MES').agg(
+df_mensual = df_flt_prod.groupby('AÑO_MES_DESEMBOLSO').agg(
     MONTO_TOTAL_NETO=('NETO', 'sum'),
     OPERACIONES=('NETO', 'count'),
-    DIAS_TRABAJADOS=('FECHA_CORTE', 'nunique')
+    DIAS_TRABAJADOS=('FECHA_DESEMBOLSO_CORTE', 'nunique')
 ).reset_index() if not df_flt_prod.empty else pd.DataFrame()
 
 # ==========================================
@@ -214,23 +188,23 @@ with tab1:
     if not df_mensual.empty:
         fig_bar = px.bar(
             df_mensual, 
-            x='AÑO_MES', 
+            x='AÑO_MES_DESEMBOLSO', 
             y='MONTO_TOTAL_NETO',
             text='MONTO_TOTAL_NETO',
             title="Evolución del Monto Neto Total Desembolsado (S/)",
-            labels={'AÑO_MES': 'Periodo (Año-Mes)', 'MONTO_TOTAL_NETO': 'Monto Total Neto (S/)'},
+            labels={'AÑO_MES_DESEMBOLSO': 'Periodo Desembolso', 'MONTO_TOTAL_NETO': 'Monto Total Neto (S/)'},
             color_discrete_sequence=['#2563eb']
         )
         fig_bar.update_traces(texttemplate='S/ %{text:,.0f}', textposition='outside')
         fig_bar.update_layout(height=500, xaxis_tickangle=-45)
         st.plotly_chart(fig_bar, use_container_width=True)
     else:
-        st.info("No se encontraron registros con los filtros seleccionados.")
+        st.info("No se encontraron registros de producción con los filtros seleccionados.")
 
-# --- PESTAÑA 2: REMESAS (TODOS LOS MESES POR FECHA DE SOLICITUD) ---
+# --- PESTAÑA 2: REMESAS (PURA FECHA DE SOLICITUD - EXACTO COMO EN EXCEL) ---
 with tab2:
-    st.subheader("📦 Conteo Completo de Remesas Ingresadas por Mes de Solicitud")
-    st.markdown("Conteo de **todas las solicitudes registradas** según su **Fecha de Solicitud** a lo largo de todo el histórico.")
+    st.subheader("📦 Conteo Exacto de Remesas por Fecha de Solicitud")
+    st.markdown("Contabiliza las filas de la hoja de cálculo usando estrictamente la columna **`FECHA DE SOLICITUD`**.")
 
     rem_total_ops = len(df_remesas)
     rem_dias_sol = df_remesas['FECHA_SOLICITUD_CORTE'].nunique() if not df_remesas.empty else 0
@@ -239,10 +213,10 @@ with tab2:
 
     # KPIs de Remesas Puras
     r_kpi1, r_kpi2, r_kpi3, r_kpi4 = st.columns(4)
-    r_kpi1.metric("📥 Total Remesas Solicitadas", f"{rem_total_ops:,} Ops")
+    r_kpi1.metric("📥 Total Remesas (Filas Solicitadas)", f"{rem_total_ops:,} Ops")
     r_kpi2.metric("📊 Promedio Diario de Solicitudes", f"{rem_prom_diario_ops:,.1f} Ops/Día")
     r_kpi3.metric("🗓️ Días Con Solicitudes", f"{rem_dias_sol:,} Días")
-    r_kpi4.metric("💰 Monto Total Solicitado (S/)", formato_compacto_limpio(rem_total_monto))
+    r_kpi4.metric("💰 Monto Referencial Solicitado", formato_compacto_limpio(rem_total_monto))
 
     st.markdown("---")
 
@@ -250,20 +224,15 @@ with tab2:
 
     with col_r1:
         if not df_remesas.empty:
-            df_rem_mensual = df_remesas.groupby('AÑO_MES_SOLICITUD').agg(
-                CANTIDAD_SOLICITUDES=('FECHA_SOLICITUD_DT', 'count'),
-                MONTO_SOLICITADO=('NETO', 'sum')
-            ).reset_index().sort_values('AÑO_MES_SOLICITUD')
-
-            # Filtrar valores nulos o inválidos
-            df_rem_mensual = df_rem_mensual[df_rem_mensual['AÑO_MES_SOLICITUD'] != 'NaT']
+            df_rem_mensual = df_remesas.groupby('AÑO_MES_SOLICITUD').size().reset_index(name='CANTIDAD_SOLICITUDES')
+            df_rem_mensual = df_rem_mensual[df_rem_mensual['AÑO_MES_SOLICITUD'] != 'NaT'].sort_values('AÑO_MES_SOLICITUD')
 
             fig_rem_bar = px.bar(
                 df_rem_mensual,
                 x='AÑO_MES_SOLICITUD',
                 y='CANTIDAD_SOLICITUDES',
                 text='CANTIDAD_SOLICITUDES',
-                title="Evolución Histórica de Remesas por Mes de Solicitud",
+                title="Conteo de Remesas por Mes de Solicitud (Sincronizado con Excel)",
                 labels={'AÑO_MES_SOLICITUD': 'Mes de Solicitud', 'CANTIDAD_SOLICITUDES': 'N° de Solicitudes'},
                 color_discrete_sequence=['#0d9488']
             )
@@ -271,7 +240,7 @@ with tab2:
             fig_rem_bar.update_layout(height=450, xaxis_tickangle=-45)
             st.plotly_chart(fig_rem_bar, use_container_width=True)
         else:
-            st.info("No hay remesas registradas para el filtro seleccionado.")
+            st.info("No hay remesas registradas para los meses seleccionados.")
 
     with col_r2:
         if not df_remesas.empty:
@@ -281,7 +250,7 @@ with tab2:
                 df_est,
                 names='ESTADO',
                 values='CANTIDAD',
-                title="Estado Final de las Solicitudes",
+                title="Estado de las Solicitudes del Periodo",
                 hole=0.4,
                 color_discrete_sequence=px.colors.qualitative.Set2
             )
@@ -300,8 +269,9 @@ with tab3:
             st.plotly_chart(fig_plz, use_container_width=True)
     with col_b:
         if not df_flt_prod.empty:
-            df_jefe = df_flt_prod.groupby('JEFE ZONAL')['NETO'].sum().reset_index().sort_values('NETO', ascending=True)
-            fig_jefe = px.bar(df_jefe, x='NETO', y='JEFE ZONAL', orientation='h', title="Monto Neto por Jefe Zonal (S/)", text_auto=',.0f')
+            col_j = 'JDN' if 'JDN' in df_flt_prod.columns else 'JEFE ZONAL'
+            df_jefe = df_flt_prod.groupby(col_j)['NETO'].sum().reset_index().sort_values('NETO', ascending=True)
+            fig_jefe = px.bar(df_jefe, x=col_j, y='NETO', orientation='h', title="Monto Neto por Jefe Zonal / JDN (S/)", text_auto=',.0f')
             st.plotly_chart(fig_jefe, use_container_width=True)
 
 # --- PESTAÑA 4: MONTE CARLO ---
