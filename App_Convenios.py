@@ -168,7 +168,7 @@ def cargar_datos_corporativos():
                 nuevas_cols.append(c_limpia)
         df_reporte_jefe.columns = nuevas_cols
 
-        # Renombrar los encabezados solicitados
+        # Renombrar los encabezados de metas solicitados
         nuevos_nombres = {}
         for col in df_reporte_jefe.columns:
             col_upper = col.upper()
@@ -352,49 +352,39 @@ df_mensual = df_flt_prod.groupby('AÑO_MES_DESEMBOLSO').agg(
 ).reset_index() if not df_flt_prod.empty else pd.DataFrame()
 
 # ==========================================
-# 4. APLICACIÓN DE FILTRADO CRUZADO PARA LAS PESTAÑAS ADICIONALES
+# 4. CONSTRUCCIÓN Y CRUCE INTELIGENTE POR DATOS PARA REPORTES
 # ==========================================
-# Filtrado dinámico para Reporte Venta
-df_venta_filtrado = df_reporte_venta.copy()
-if not df_venta_filtrado.empty:
-    if sel_territorial != "TODOS" and 'TERRITORIAL' in df_venta_filtrado.columns:
-        df_venta_filtrado = df_venta_filtrado[df_venta_filtrado['TERRITORIAL'] == sel_territorial]
-    if sel_zona != "TODAS" and 'ZONA' in df_venta_filtrado.columns:
-        df_venta_filtrado = df_venta_filtrado[df_venta_filtrado['ZONA'] == sel_zona]
-    if sel_plaza != "TODAS" and 'PLAZA' in df_venta_filtrado.columns:
-        df_venta_filtrado = df_venta_filtrado[df_venta_filtrado['PLAZA'] == sel_plaza]
-    if sel_jefe != "TODOS":
-        col_j_v = next((c for c in df_venta_filtrado.columns if 'JEFE' in c.upper() or 'ZONAL' in c.upper()), None)
-        if col_j_v:
-            df_venta_filtrado = df_venta_filtrado[df_venta_filtrado[col_j_v] == sel_jefe]
-    if sel_sup != "TODOS":
-        col_s_v = next((c for c in df_venta_filtrado.columns if 'SUPERVISOR' in c.upper()), None)
-        if col_s_v:
-            df_venta_filtrado = df_venta_filtrado[df_venta_filtrado[col_s_v] == sel_sup]
+# Función robusta para filtrar tablas secundarias buscando coincidencias de columnas
+def filtrar_tabla_por_datos(df_tabla, territorial, zona, plaza, jefe, supervisor):
+    if df_tabla.empty:
+        return df_tabla
+    
+    df_res = df_tabla.copy()
+    
+    # Mapeo y búsqueda automática de columnas equivalentes
+    cols_up = {c.upper(): c for c in df_res.columns}
+    
+    col_t = next((cols_up[k] for k in cols_up if 'TERRITORIAL' in k), None)
+    col_z = next((cols_up[k] for k in cols_up if 'ZONA' in k and 'JEFE' not in k), None)
+    col_p = next((cols_up[k] for k in cols_up if 'PLAZA' in k), None)
+    col_j = next((cols_up[k] for k in cols_up if 'JEFE' in k or 'ZONAL' in k), None)
+    col_s = next((cols_up[k] for k in cols_up if 'SUPERVISOR' in k), None)
+    
+    if territorial != "TODOS" and col_t:
+        df_res = df_res[df_res[col_t] == territorial]
+    if zona != "TODAS" and col_z:
+        df_res = df_res[df_res[col_z] == zona]
+    if plaza != "TODAS" and col_p:
+        df_res = df_res[df_res[col_p] == plaza]
+    if jefe != "TODOS" and col_j:
+        df_res = df_res[df_res[col_j] == jefe]
+    if supervisor != "TODOS" and col_s:
+        df_res = df_res[df_res[col_s] == supervisor]
+        
+    return df_res
 
-# Filtrado dinámico para Reporte Jefe
-df_jefe_filtrado = df_reporte_jefe.copy()
-if not df_jefe_filtrado.empty:
-    if sel_territorial != "TODOS":
-        col_t_j = next((c for c in df_jefe_filtrado.columns if 'TERRITORIAL' in c.upper()), None)
-        if col_t_j:
-            df_jefe_filtrado = df_jefe_filtrado[df_jefe_filtrado[col_t_j] == sel_territorial]
-    if sel_zona != "TODAS":
-        col_z_j = next((c for c in df_jefe_filtrado.columns if 'ZONA' in c.upper()), None)
-        if col_z_j:
-            df_jefe_filtrado = df_jefe_filtrado[df_jefe_filtrado[col_z_j] == sel_zona]
-    if sel_plaza != "TODAS":
-        col_p_j = next((c for c in df_jefe_filtrado.columns if 'PLAZA' in c.upper()), None)
-        if col_p_j:
-            df_jefe_filtrado = df_jefe_filtrado[df_jefe_filtrado[col_p_j] == sel_plaza]
-    if sel_jefe != "TODOS":
-        col_j_j = next((c for c in df_jefe_filtrado.columns if 'JEFE' in c.upper() or 'ZONAL' in c.upper()), None)
-        if col_j_j:
-            df_jefe_filtrado = df_jefe_filtrado[df_jefe_filtrado[col_j_j] == sel_jefe]
-    if sel_sup != "TODOS":
-        col_s_j = next((c for c in df_jefe_filtrado.columns if 'SUPERVISOR' in c.upper()), None)
-        if col_s_j:
-            df_jefe_filtrado = df_jefe_filtrado[df_jefe_filtrado[col_s_j] == sel_sup]
+df_venta_filtrado = filtrar_tabla_por_datos(df_reporte_venta, sel_territorial, sel_zona, sel_plaza, sel_jefe, sel_sup)
+df_jefe_filtrado = filtrar_tabla_por_datos(df_reporte_jefe, sel_territorial, sel_zona, sel_plaza, sel_jefe, sel_sup)
 
 # ==========================================
 # 5. ESTRUCTURA DE PESTAÑAS DEL DASHBOARD
@@ -507,19 +497,19 @@ with tab3:
             fig_jefe.update_layout(template="plotly_white")
             st.plotly_chart(fig_jefe, use_container_width=True)
 
-# --- PESTAÑA 4: REPORTE VENTA (FILTRADO CRUZADO) ---
+# --- PESTAÑA 4: REPORTE VENTA (CRUCE POR DATOS) ---
 with tab4:
-    st.subheader("📑 Pestaña: Reporte Venta (Filtrado Dinámico)")
-    st.markdown("Visualización cruzada con los filtros gerenciales de la barra lateral.")
+    st.subheader("📑 Pestaña: Reporte Venta (Sincronizado con Filtros)")
+    st.markdown("Visualización cruzada basada en las coincidencias exactas de datos de la barra lateral.")
     if not df_venta_filtrado.empty:
         st.dataframe(df_venta_filtrado, use_container_width=True)
     else:
         st.info("No se encontraron registros en 'Reporte Venta' para los filtros seleccionados.")
 
-# --- PESTAÑA 5: REPORTE JEFE (FILTRADO CRUZADO) ---
+# --- PESTAÑA 5: REPORTE JEFE (CRUCE POR DATOS) ---
 with tab5:
-    st.subheader("👔 Pestaña: Reporte Venta j Jefe (Filtrado Dinámico)")
-    st.markdown("Visualización cruzada con los filtros gerenciales (Jefe Zonal, Territorial, etc.).")
+    st.subheader("👔 Pestaña: Reporte Venta j Jefe (Sincronizado con Filtros)")
+    st.markdown("Visualización cruzada basada en las coincidencias exactas de datos de la barra lateral.")
     if not df_jefe_filtrado.empty:
         st.dataframe(df_jefe_filtrado, use_container_width=True)
     else:
