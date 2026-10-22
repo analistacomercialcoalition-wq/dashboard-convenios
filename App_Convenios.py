@@ -66,7 +66,7 @@ with st.spinner("Sincronizando base de datos corporativa..."):
     df_base = cargar_datos_corporativos()
 
 # ==========================================
-# 2. FILTROS EN BARRA LATERAL (JERARQUÍA)
+# 2. FILTROS EN BARRA LATERAL (JERARQUÍA COMERCIAL)
 # ==========================================
 st.sidebar.header("🔍 Panel de Filtros y Control")
 st.sidebar.subheader("🏢 Estructura Comercial")
@@ -109,7 +109,7 @@ with f_col1:
     max_f = df_flt['FECHA_CORTE'].dropna().max() if not df_flt.empty else datetime.today().date()
     
     rango_fechas = st.date_input(
-        "📅 Rango Fecha de Desembolso / Referencia",
+        "📅 Rango Fecha de Desembolso / Solicitud",
         value=(min_f, max_f),
         min_value=min_f,
         max_value=max_f
@@ -118,7 +118,7 @@ with f_col1:
 with f_col2:
     estados_disp = sorted(list(df_flt['ESTADO'].dropna().unique())) if not df_flt.empty else []
     sel_estados = st.multiselect(
-        "📌 Estado de Operación (Para Pestaña Producción)", 
+        "📌 Estado de Operación", 
         options=estados_disp, 
         default=["DESEMBOLSADO"] if "DESEMBOLSADO" in estados_disp else estados_disp
     )
@@ -131,7 +131,7 @@ with f_col3:
         default=meses_disp
     )
 
-# Filtrado para pestaña de producción
+# --- FILTRADO PARA PESTAÑA PRODUCCIÓN ---
 df_flt_prod = df_flt.copy()
 
 if isinstance(rango_fechas, (list, tuple)) and len(rango_fechas) == 2:
@@ -143,6 +143,22 @@ if sel_estados:
 
 if sel_meses:
     df_flt_prod = df_flt_prod[df_flt_prod['AÑO_MES'].isin(sel_meses)]
+
+# --- FILTRADO VINICULADO TOTAL PARA PESTAÑA REMESAS ---
+df_remesas = df_flt.copy()
+
+if isinstance(rango_fechas, (list, tuple)) and len(rango_fechas) == 2:
+    f_ini, f_fin = rango_fechas
+    df_remesas = df_remesas[
+        (df_remesas['FECHA_SOLICITUD_CORTE'] >= f_ini) & 
+        (df_remesas['FECHA_SOLICITUD_CORTE'] <= f_fin)
+    ]
+
+if sel_estados:
+    df_remesas = df_remesas[df_remesas['ESTADO'].isin(sel_estados)]
+
+if sel_meses:
+    df_remesas = df_remesas[df_remesas['AÑO_MES_SOLICITUD'].isin(sel_meses)]
 
 st.markdown("---")
 
@@ -178,7 +194,7 @@ df_mensual = df_flt_prod.groupby('AÑO_MES').agg(
 ).reset_index() if not df_flt_prod.empty else pd.DataFrame()
 
 # ==========================================
-# 5. ESTRUCTURA DE PESTAÑAS (ENFOCADA EN REMESAS POR CANTIDAD)
+# 5. ESTRUCTURA DE PESTAÑAS (REMESAS TOTALMENTE VINCULADA)
 # ==========================================
 tab1, tab2, tab3, tab4 = st.tabs([
     "📊 Producción Total por Mes", 
@@ -204,21 +220,12 @@ with tab1:
         fig_bar.update_layout(height=500, xaxis_tickangle=-45)
         st.plotly_chart(fig_bar, use_container_width=True)
     else:
-        st.info("No se encontraron registros con los filtros seleccionados.")
+        st.info("No se encontraron registros de producción con los filtros seleccionados.")
 
-# --- PESTAÑA 2: REMESAS (CANTIDAD / VOLUMEN DE SOLICITUDES) ---
+# --- PESTAÑA 2: REMESAS (TOTALMENTE FILTRADA Y VINCULADA) ---
 with tab2:
     st.subheader("📦 Volumen y Cantidad de Remesas Ingresadas")
-    st.markdown("Monitoreo de **volumen operativo de solicitudes** (todos los estados) tomado según la **Fecha de Solicitud**.")
-
-    # Filtrar remesas únicamente por jerarquía comercial y rango de fecha de solicitud
-    df_remesas = df_flt.copy()
-    if isinstance(rango_fechas, (list, tuple)) and len(rango_fechas) == 2:
-        f_ini, f_fin = rango_fechas
-        df_remesas = df_remesas[
-            (df_remesas['FECHA_SOLICITUD_CORTE'] >= f_ini) & 
-            (df_remesas['FECHA_SOLICITUD_CORTE'] <= f_fin)
-        ]
+    st.markdown("Monitoreo de **volumen de solicitudes** sincronizado con todos los filtros de Jerarquía Comercial, Fecha, Estados y Meses seleccionados.")
 
     rem_total_ops = len(df_remesas)
     rem_dias_sol = df_remesas['FECHA_SOLICITUD_CORTE'].nunique() if not df_remesas.empty else 0
@@ -227,7 +234,7 @@ with tab2:
 
     # KPIs centrados en Cantidad de Operaciones
     r_kpi1, r_kpi2, r_kpi3, r_kpi4 = st.columns(4)
-    r_kpi1.metric("📥 Total Solicitudes Ingresadas", f"{rem_total_ops:,} Ops")
+    r_kpi1.metric("📥 Total Solicitudes Filtradas", f"{rem_total_ops:,} Ops")
     r_kpi2.metric("📊 Promedio Diario de Solicitudes", f"{rem_prom_diario_ops:,.1f} Ops/Día")
     r_kpi3.metric("🗓️ Días Con Solicitudes", f"{rem_dias_sol:,} Días")
     r_kpi4.metric("💰 Monto Referencial Solicitado", formato_compacto_limpio(rem_total_monto))
@@ -248,13 +255,15 @@ with tab2:
                 x='AÑO_MES_SOLICITUD',
                 y='CANTIDAD_SOLICITUDES',
                 text='CANTIDAD_SOLICITUDES',
-                title="Evolución de Cantidad de Remesas por Mes (Fecha de Solicitud)",
+                title="Evolución de Cantidad de Remesas por Mes (Sincronizada)",
                 labels={'AÑO_MES_SOLICITUD': 'Mes de Solicitud', 'CANTIDAD_SOLICITUDES': 'N° de Solicitudes'},
                 color_discrete_sequence=['#0d9488']
             )
             fig_rem_bar.update_traces(texttemplate='%{text:,} Ops', textposition='outside')
             fig_rem_bar.update_layout(height=450)
             st.plotly_chart(fig_rem_bar, use_container_width=True)
+        else:
+            st.info("No hay remesas que coincidan con la combinación exacta de Estado y Meses seleccionados.")
 
     with col_r2:
         if not df_remesas.empty:
@@ -264,7 +273,7 @@ with tab2:
                 df_est,
                 names='ESTADO',
                 values='CANTIDAD',
-                title="Distribución de Remesas por Estado (En Cantidades)",
+                title="Distribución por Estado (Filtrada)",
                 hole=0.4,
                 color_discrete_sequence=px.colors.qualitative.Set2
             )
