@@ -23,7 +23,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("📊 Dashboard Ejecutivo de Gestión Comercial & Convenios")
-st.markdown("### **Coalition Group — Matriz de Colocaciones y Proyecciones Estacionales Perú**")
+st.markdown("### **Coalition Group — Matriz de Colocaciones, Remesas y Proyecciones Estacionales Perú**")
 st.markdown("---")
 
 # ==========================================
@@ -35,18 +35,30 @@ def cargar_datos_corporativos():
     df = pd.read_csv(sheet_url)
     df.columns = df.columns.str.strip()
     
+    # Limpieza de montos
     df['NETO'] = pd.to_numeric(
         df['NETO'].astype(str).str.replace(',', '').str.replace('S/', '').str.replace(' ', '').str.strip(), 
         errors='coerce'
     ).fillna(0)
     
+    # Limpieza de Fecha de Desembolso
     df['FECHA_DT'] = pd.to_datetime(df['FECHA DE DESEMBOLSO'], format='%d/%m/%Y', errors='coerce')
-    df = df.dropna(subset=['FECHA_DT']).copy()
     
-    df['AÑO'] = df['FECHA_DT'].dt.year.astype(int)
-    df['MES_NUM'] = df['FECHA_DT'].dt.month.astype(int)
+    # Buscar columna de Fecha de Solicitud
+    col_solicitud = [c for c in df.columns if 'SOLICITUD' in c.upper()]
+    if col_solicitud:
+        df['FECHA_SOLICITUD_DT'] = pd.to_datetime(df[col_solicitud[0]], format='%d/%m/%Y', errors='coerce')
+    else:
+        df['FECHA_SOLICITUD_DT'] = df['FECHA_DT']  # Fallback si no existiera
+        
+    df['AÑO'] = df['FECHA_DT'].dt.year.fillna(0).astype(int)
+    df['MES_NUM'] = df['FECHA_DT'].dt.month.fillna(0).astype(int)
     df['AÑO_MES'] = df['FECHA_DT'].dt.to_period('M').astype(str)
     df['FECHA_CORTE'] = df['FECHA_DT'].dt.date
+    
+    # Atributos específicos para Remesas (Fecha de Solicitud)
+    df['AÑO_MES_SOLICITUD'] = df['FECHA_SOLICITUD_DT'].dt.to_period('M').astype(str)
+    df['FECHA_SOLICITUD_CORTE'] = df['FECHA_SOLICITUD_DT'].dt.date
     
     return df
 
@@ -93,11 +105,11 @@ st.markdown("### 🎛️ Filtros de Control Temporal y Estado")
 f_col1, f_col2, f_col3 = st.columns(3)
 
 with f_col1:
-    min_f = df_flt['FECHA_CORTE'].min() if not df_flt.empty else datetime.today().date()
-    max_f = df_flt['FECHA_CORTE'].max() if not df_flt.empty else datetime.today().date()
+    min_f = df_flt['FECHA_CORTE'].dropna().min() if not df_flt.empty else datetime.today().date()
+    max_f = df_flt['FECHA_CORTE'].dropna().max() if not df_flt.empty else datetime.today().date()
     
     rango_fechas = st.date_input(
-        "📅 Rango Fecha de Desembolso",
+        "📅 Rango Fecha de Desembolso / Referencia",
         value=(min_f, max_f),
         min_value=min_f,
         max_value=max_f
@@ -106,7 +118,7 @@ with f_col1:
 with f_col2:
     estados_disp = sorted(list(df_flt['ESTADO'].dropna().unique())) if not df_flt.empty else []
     sel_estados = st.multiselect(
-        "📌 Estado de Operación", 
+        "📌 Estado de Operación (Para Pestaña Producción)", 
         options=estados_disp, 
         default=["DESEMBOLSADO"] if "DESEMBOLSADO" in estados_disp else estados_disp
     )
@@ -119,27 +131,22 @@ with f_col3:
         default=meses_disp
     )
 
+# Filtrado para pestaña de producción
+df_flt_prod = df_flt.copy()
+
 if isinstance(rango_fechas, (list, tuple)) and len(rango_fechas) == 2:
     f_ini, f_fin = rango_fechas
-    df_flt = df_flt[(df_flt['FECHA_CORTE'] >= f_ini) & (df_flt['FECHA_CORTE'] <= f_fin)]
+    df_flt_prod = df_flt_prod[(df_flt_prod['FECHA_CORTE'] >= f_ini) & (df_flt_prod['FECHA_CORTE'] <= f_fin)]
 
 if sel_estados:
-    df_flt = df_flt[df_flt['ESTADO'].isin(sel_estados)]
+    df_flt_prod = df_flt_prod[df_flt_prod['ESTADO'].isin(sel_estados)]
 
 if sel_meses:
-    df_flt = df_flt[df_flt['AÑO_MES'].isin(sel_meses)]
+    df_flt_prod = df_flt_prod[df_flt_prod['AÑO_MES'].isin(sel_meses)]
 
 st.markdown("---")
 
-# ==========================================
-# 4. TARJETAS KPI EN 4 COLUMNAS (COMPACTAS)
-# ==========================================
-total_neto = df_flt['NETO'].sum() if not df_flt.empty else 0
-total_ops = len(df_flt)
-dias_efectivos = df_flt['FECHA_CORTE'].nunique() if not df_flt.empty else 0
-prom_diario = total_neto / dias_efectivos if dias_efectivos > 0 else 0
-ticket_prom = total_neto / total_ops if total_ops > 0 else 0
-
+# Formateador global
 def formato_compacto_limpio(val):
     if val >= 1e6:
         return f"S/ {val/1e6:,.2f}M"
@@ -148,25 +155,39 @@ def formato_compacto_limpio(val):
     else:
         return f"S/ {val:,.2f}"
 
+# ==========================================
+# 4. TARJETAS KPI EN 4 COLUMNAS (PRODUCCIÓN)
+# ==========================================
+total_neto = df_flt_prod['NETO'].sum() if not df_flt_prod.empty else 0
+total_ops = len(df_flt_prod)
+dias_efectivos = df_flt_prod['FECHA_CORTE'].nunique() if not df_flt_prod.empty else 0
+prom_diario = total_neto / dias_efectivos if dias_efectivos > 0 else 0
+
 kpi1, kpi2, kpi3, kpi4 = st.columns(4)
 kpi1.metric("💰 Neto Total Desembolsado", formato_compacto_limpio(total_neto))
-kpi2.metric("📋 Total Operaciones", f"{total_ops:,}")
+kpi2.metric("📋 Total Operaciones Desembolsadas", f"{total_ops:,} Ops")
 kpi3.metric("📅 Días Con Desembolso", f"{dias_efectivos:,}")
 kpi4.metric("📈 Prom. Diario / Ticket", f"{formato_compacto_limpio(prom_diario)}")
 
 st.markdown("---")
 
-df_mensual = df_flt.groupby('AÑO_MES').agg(
+df_mensual = df_flt_prod.groupby('AÑO_MES').agg(
     MONTO_TOTAL_NETO=('NETO', 'sum'),
     OPERACIONES=('NETO', 'count'),
     DIAS_TRABAJADOS=('FECHA_CORTE', 'nunique')
-).reset_index() if not df_flt.empty else pd.DataFrame()
+).reset_index() if not df_flt_prod.empty else pd.DataFrame()
 
 # ==========================================
-# 5. VISUALIZACIÓN Y MONTE CARLO ESTACIONAL
+# 5. ESTRUCTURA DE PESTAÑAS (ENFOCADA EN REMESAS POR CANTIDAD)
 # ==========================================
-tab1, tab2, tab3 = st.tabs(["📊 Producción Total por Mes", "🏆 Red Comercial & Ranking", "🎲 Monte Carlo (Estacionalidad Convenios Perú)"])
+tab1, tab2, tab3, tab4 = st.tabs([
+    "📊 Producción Total por Mes", 
+    "📦 Remesas (Cantidades de Solicitudes)", 
+    "🏆 Red Comercial & Ranking", 
+    "🎲 Monte Carlo (Estacionalidad Convenios Perú)"
+])
 
+# --- PESTAÑA 1: PRODUCCIÓN ---
 with tab1:
     st.subheader("💵 Monto Neto Total Desembolsado por Periodo")
     if not df_mensual.empty:
@@ -185,25 +206,92 @@ with tab1:
     else:
         st.info("No se encontraron registros con los filtros seleccionados.")
 
+# --- PESTAÑA 2: REMESAS (CANTIDAD / VOLUMEN DE SOLICITUDES) ---
 with tab2:
+    st.subheader("📦 Volumen y Cantidad de Remesas Ingresadas")
+    st.markdown("Monitoreo de **volumen operativo de solicitudes** (todos los estados) tomado según la **Fecha de Solicitud**.")
+
+    # Filtrar remesas únicamente por jerarquía comercial y rango de fecha de solicitud
+    df_remesas = df_flt.copy()
+    if isinstance(rango_fechas, (list, tuple)) and len(rango_fechas) == 2:
+        f_ini, f_fin = rango_fechas
+        df_remesas = df_remesas[
+            (df_remesas['FECHA_SOLICITUD_CORTE'] >= f_ini) & 
+            (df_remesas['FECHA_SOLICITUD_CORTE'] <= f_fin)
+        ]
+
+    rem_total_ops = len(df_remesas)
+    rem_dias_sol = df_remesas['FECHA_SOLICITUD_CORTE'].nunique() if not df_remesas.empty else 0
+    rem_prom_diario_ops = rem_total_ops / rem_dias_sol if rem_dias_sol > 0 else 0
+    rem_total_monto = df_remesas['NETO'].sum() if not df_remesas.empty else 0
+
+    # KPIs centrados en Cantidad de Operaciones
+    r_kpi1, r_kpi2, r_kpi3, r_kpi4 = st.columns(4)
+    r_kpi1.metric("📥 Total Solicitudes Ingresadas", f"{rem_total_ops:,} Ops")
+    r_kpi2.metric("📊 Promedio Diario de Solicitudes", f"{rem_prom_diario_ops:,.1f} Ops/Día")
+    r_kpi3.metric("🗓️ Días Con Solicitudes", f"{rem_dias_sol:,} Días")
+    r_kpi4.metric("💰 Monto Referencial Solicitado", formato_compacto_limpio(rem_total_monto))
+
+    st.markdown("---")
+
+    col_r1, col_r2 = st.columns([2, 1])
+
+    with col_r1:
+        if not df_remesas.empty:
+            df_rem_mensual = df_remesas.groupby('AÑO_MES_SOLICITUD').agg(
+                CANTIDAD_SOLICITUDES=('NETO', 'count'),
+                MONTO_SOLICITADO=('NETO', 'sum')
+            ).reset_index()
+
+            fig_rem_bar = px.bar(
+                df_rem_mensual,
+                x='AÑO_MES_SOLICITUD',
+                y='CANTIDAD_SOLICITUDES',
+                text='CANTIDAD_SOLICITUDES',
+                title="Evolución de Cantidad de Remesas por Mes (Fecha de Solicitud)",
+                labels={'AÑO_MES_SOLICITUD': 'Mes de Solicitud', 'CANTIDAD_SOLICITUDES': 'N° de Solicitudes'},
+                color_discrete_sequence=['#0d9488']
+            )
+            fig_rem_bar.update_traces(texttemplate='%{text:,} Ops', textposition='outside')
+            fig_rem_bar.update_layout(height=450)
+            st.plotly_chart(fig_rem_bar, use_container_width=True)
+
+    with col_r2:
+        if not df_remesas.empty:
+            df_est = df_remesas.groupby('ESTADO').size().reset_index(name='CANTIDAD')
+
+            fig_pie_est = px.pie(
+                df_est,
+                names='ESTADO',
+                values='CANTIDAD',
+                title="Distribución de Remesas por Estado (En Cantidades)",
+                hole=0.4,
+                color_discrete_sequence=px.colors.qualitative.Set2
+            )
+            fig_pie_est.update_traces(textinfo='value+percent')
+            fig_pie_est.update_layout(height=450)
+            st.plotly_chart(fig_pie_est, use_container_width=True)
+
+# --- PESTAÑA 3: RED COMERCIAL ---
+with tab3:
     st.subheader("Evaluación de Desempeño por Plaza y Jefatura Zonal")
     col_a, col_b = st.columns(2)
     with col_a:
-        if not df_flt.empty:
-            df_plaza = df_flt.groupby('PLAZA')['NETO'].sum().reset_index().sort_values('NETO', ascending=True)
+        if not df_flt_prod.empty:
+            df_plaza = df_flt_prod.groupby('PLAZA')['NETO'].sum().reset_index().sort_values('NETO', ascending=True)
             fig_plz = px.bar(df_plaza, x='NETO', y='PLAZA', orientation='h', title="Monto Neto por Plaza (S/)", text_auto=',.0f')
             st.plotly_chart(fig_plz, use_container_width=True)
     with col_b:
-        if not df_flt.empty:
-            df_jefe = df_flt.groupby('JEFE ZONAL')['NETO'].sum().reset_index().sort_values('NETO', ascending=True)
+        if not df_flt_prod.empty:
+            df_jefe = df_flt_prod.groupby('JEFE ZONAL')['NETO'].sum().reset_index().sort_values('NETO', ascending=True)
             fig_jefe = px.bar(df_jefe, x='NETO', y='JEFE ZONAL', orientation='h', title="Monto Neto por Jefe Zonal (S/)", text_auto=',.0f')
             st.plotly_chart(fig_jefe, use_container_width=True)
 
-with tab3:
+# --- PESTAÑA 4: MONTE CARLO ---
+with tab4:
     st.subheader("🎲 Motor Estocástico Monte Carlo (100,000 Escenarios - Convenios Perú)")
     st.markdown("Proyección basada en el **promedio mensual histórico real** de la matriz, calibrada con la sensibilidad de créditos por planilla (Picos en Noviembre, Diciembre y Julio).")
 
-    # Controles opcionales para calibrar sensibilidad fina de fin de año
     with st.expander("⚙️ Calibración Avanzada de Factores Estacionales (Perú)"):
         f_jul = st.slider("Factor Julio (Gratificación Fiestas Patrias)", 1.0, 1.8, 1.25)
         f_nov = st.slider("Factor Noviembre (CTS y Pre-cierre)", 1.0, 1.8, 1.20)
@@ -211,24 +299,13 @@ with tab3:
         f_mar = st.slider("Factor Marzo (Campaña Escolar)", 0.8, 1.4, 1.10)
 
     if st.button("🚀 Ejecutar Simulación 100k Escenarios Estacionales"):
-        # Base: Promedio mensual histórico real de la data filtrada
         base_mensual_historica = df_mensual['MONTO_TOTAL_NETO'].mean() if not df_mensual.empty else 35000000
         std_mensual_historica = df_mensual['MONTO_TOTAL_NETO'].std() if (not df_mensual.empty and len(df_mensual) > 1) else base_mensual_historica * 0.12
 
-        # Factores estacionales refinados para el mercado peruano de convenios
         factores_peru = {
-            'Enero': 0.85,
-            'Febrero': 0.90,
-            'Marzo': f_mar,
-            'Abril': 1.00,
-            'Mayo': 1.02,
-            'Junio': 1.08,
-            'Julio': f_jul,
-            'Agosto': 0.95,
-            'Setiembre': 1.00,
-            'Octubre': 1.05,
-            'Noviembre': f_nov,
-            'Diciembre': f_dic
+            'Enero': 0.85, 'Febrero': 0.90, 'Marzo': f_mar, 'Abril': 1.00,
+            'Mayo': 1.02, 'Junio': 1.08, 'Julio': f_jul, 'Agosto': 0.95,
+            'Setiembre': 1.00, 'Octubre': 1.05, 'Noviembre': f_nov, 'Diciembre': f_dic
         }
 
         sims = 100000
@@ -241,7 +318,6 @@ with tab3:
             media_mes = base_mensual_historica * factor
             std_mes = max(std_mensual_historica * factor, base_mensual_historica * 0.05)
             
-            # Simulación estocástica directa a nivel mensual (100,000 escenarios)
             totales = np.random.normal(loc=media_mes, scale=std_mes, size=sims)
             totales = np.clip(totales, 0, None)
 
