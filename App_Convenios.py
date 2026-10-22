@@ -3,26 +3,87 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
+import os
 
 # Configuración de página corporativa
 st.set_page_config(
-    page_title="Dashboard Gerencial & Modelo Predictivo | Coalition",
+    page_title="Dashboard Gerencial & Modelo Predictivo | Coalition Convenios",
+    page_icon="🦁",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Estilo para evitar recortes en métricas
+# ==========================================
+# ESTILOS CSS PERSONALIZADOS (TEMA EJECUTIVO BLANCO Y AZUL OSCURO)
+# ==========================================
 st.markdown("""
     <style>
-        [data-testid="stMetricValue"] {
+        /* Fondo Principal Claro */
+        .stApp {
+            background-color: #FFFFFF;
+            color: #0F172A;
+        }
+        
+        /* Barra Lateral Azul Oscuro Ejecutivo */
+        [data-testid="stSidebar"] {
+            background-color: #0F172A !important;
+            color: #FFFFFF !important;
+        }
+        
+        /* Estilos de texto e íconos dentro del Sidebar */
+        [data-testid="stSidebar"] h1, 
+        [data-testid="stSidebar"] h2, 
+        [data-testid="stSidebar"] h3, 
+        [data-testid="stSidebar"] label, 
+        [data-testid="stSidebar"] .stMarkdown {
+            color: #F8FAFC !important;
+        }
+        
+        /* Cajas de Selección dentro del Sidebar */
+        [data-testid="stSidebar"] div[data-baseweb="select"] > div {
+            background-color: #1E293B !important;
+            color: #FFFFFF !important;
+            border-color: #334155 !important;
+        }
+
+        /* Tarjetas de Métricas KPI */
+        div[data-testid="stMetricValue"] {
             font-size: 1.6rem !important;
             white-space: nowrap !important;
+            color: #0F172A !important;
+            font-weight: 700 !important;
+        }
+
+        /* Títulos e Historial */
+        h1, h2, h3 {
+            color: #0F172A !important;
+            font-weight: 800 !important;
+        }
+
+        /* Estilo de la divisoria */
+        hr {
+            border-color: #CBD5E1 !important;
         }
     </style>
 """, unsafe_allow_html=True)
 
-st.title("📊 Dashboard Ejecutivo de Gestión Comercial & Convenios")
-st.markdown("### **Coalition Group — Matriz de Colocaciones, Remesas y Proyecciones Estacionales Perú**")
+# ==========================================
+# CABECERA CON LOGO Y TÍTULO
+# ==========================================
+col_logo, col_tit = st.columns([1, 5])
+
+with col_logo:
+    if os.path.exists("Convenios Coalition.jpg"):
+        st.image("Convenios Coalition.jpg", width=140)
+    elif os.path.exists("logo.jpg"):
+        st.image("logo.jpg", width=140)
+    else:
+        st.markdown("## 🦁")
+
+with col_tit:
+    st.title("CONVENIOS COALITION")
+    st.markdown("##### **Matriz Gerencial de Colocaciones, Remesas y Modelo Predictivo Estacional**")
+
 st.markdown("---")
 
 # ==========================================
@@ -40,7 +101,7 @@ def cargar_datos_corporativos():
         errors='coerce'
     ).fillna(0)
 
-    # Limpieza de texto de jerarquía comercial
+    # Limpieza de texto comercial
     cols_a_limpiar = ['ZONA', 'PLAZA', 'JEFE ZONAL', 'SUPERVISOR', 'ASESOR CORRECTO', 'ESTADO']
     for col in cols_a_limpiar:
         if col in df.columns:
@@ -68,7 +129,7 @@ def cargar_datos_corporativos():
 
     df = df[df['FECHA_SOLICITUD_DT'].notna()]
     
-    # ID de desduplicación
+    # ID de desduplicación exacta
     cols_id = [c for c in df.columns if any(k in c.upper() for k in ['EXPEDIE', 'DNI', 'CREDITO', 'OPERACION'])]
     df['ID_UNICO'] = df[cols_id[0]].astype(str).str.strip() if cols_id else df.index.astype(str)
 
@@ -76,7 +137,7 @@ def cargar_datos_corporativos():
     
     return df
 
-with st.spinner("Sincronizando base comercial..."):
+with st.spinner("Cargando matriz corporativa Coalition..."):
     df_base = cargar_datos_corporativos()
 
 def obtener_opciones_limpias(df_in, col_name):
@@ -86,9 +147,15 @@ def obtener_opciones_limpias(df_in, col_name):
     return []
 
 # ==========================================
-# 2. FILTROS EN BARRA LATERAL (ESTRUCTURA COMERCIAL ESTRICTA)
+# 2. FILTROS EN BARRA LATERAL AZUL OSCURO
 # ==========================================
-st.sidebar.header("🔍 Panel de Filtros y Control")
+if os.path.exists("Convenios Coalition.jpg"):
+    st.sidebar.image("Convenios Coalition.jpg", use_column_width=True)
+elif os.path.exists("logo.jpg"):
+    st.sidebar.image("logo.jpg", use_column_width=True)
+
+st.sidebar.markdown("<h2 style='color: #D97706; text-align: center;'>CONVENIOS COALITION</h2>", unsafe_allow_html=True)
+st.sidebar.markdown("---")
 st.sidebar.subheader("🏢 Estructura Comercial")
 
 df_flt_sidebar = df_base.copy()
@@ -124,7 +191,7 @@ df_flt = df_flt_sidebar.copy()
 # ==========================================
 # 3. FILTROS EN ENCABEZADO SUPERIOR
 # ==========================================
-st.markdown("### 🎛️ Filtros de Control Temporal y Estado")
+st.markdown("### 🎛️ Controles Temporales y Estado Operativo")
 f_col1, f_col2, f_col3 = st.columns(3)
 
 with f_col1:
@@ -151,14 +218,12 @@ with f_col3:
         default=[]
     )
 
-# --- FILTRADO PRODUCCIÓN ---
 df_flt_prod = df_flt.copy()
 if sel_estados_prod:
     df_flt_prod = df_flt_prod[df_flt_prod['ESTADO'].isin(sel_estados_prod)]
 if sel_meses_desembolso:
     df_flt_prod = df_flt_prod[df_flt_prod['AÑO_MES_DESEMBOLSO'].isin(sel_meses_desembolso)]
 
-# --- FILTRADO REMESAS ---
 df_remesas = df_flt.copy()
 if sel_meses_remesa:
     df_remesas = df_remesas[df_remesas['AÑO_MES_SOLICITUD'].isin(sel_meses_remesa)]
@@ -212,10 +277,10 @@ with tab1:
             text='MONTO_TOTAL_NETO',
             title="Evolución del Monto Neto Total Desembolsado (S/)",
             labels={'AÑO_MES_DESEMBOLSO': 'Periodo Desembolso', 'MONTO_TOTAL_NETO': 'Monto Total Neto (S/)'},
-            color_discrete_sequence=['#2563eb']
+            color_discrete_sequence=['#0F172A']
         )
         fig_bar.update_traces(texttemplate='S/ %{text:,.0f}', textposition='outside')
-        fig_bar.update_layout(height=500, xaxis_tickangle=-45)
+        fig_bar.update_layout(height=500, xaxis_tickangle=-45, template="plotly_white")
         st.plotly_chart(fig_bar, use_container_width=True)
     else:
         st.info("No se encontraron registros de producción con los filtros seleccionados.")
@@ -259,10 +324,10 @@ with tab2:
                 text='CANTIDAD_SOLICITUDES',
                 title="Conteo de Remesas por Mes de Solicitud (Sincronizado con Excel)",
                 labels={'AÑO_MES_SOLICITUD': 'Mes de Solicitud', 'CANTIDAD_SOLICITUDES': 'N° de Solicitudes'},
-                color_discrete_sequence=['#0d9488']
+                color_discrete_sequence=['#0D9488']
             )
             fig_rem_bar.update_traces(texttemplate='%{text:,} Ops', textposition='outside')
-            fig_rem_bar.update_layout(height=450, xaxis_tickangle=-45)
+            fig_rem_bar.update_layout(height=450, xaxis_tickangle=-45, template="plotly_white")
             st.plotly_chart(fig_rem_bar, use_container_width=True)
         else:
             st.info("No hay remesas registradas para los filtros seleccionados.")
@@ -280,7 +345,7 @@ with tab2:
                 color_discrete_sequence=px.colors.qualitative.Set2
             )
             fig_pie_est.update_traces(textinfo='value+percent')
-            fig_pie_est.update_layout(height=450)
+            fig_pie_est.update_layout(height=450, template="plotly_white")
             st.plotly_chart(fig_pie_est, use_container_width=True)
 
 # --- PESTAÑA 3: RED COMERCIAL ---
@@ -290,15 +355,17 @@ with tab3:
     with col_a:
         if not df_flt_prod.empty:
             df_plaza = df_flt_prod.groupby('PLAZA')['NETO'].sum().reset_index().sort_values('NETO', ascending=True)
-            fig_plz = px.bar(df_plaza, x='NETO', y='PLAZA', orientation='h', title="Monto Neto por Plaza (S/)", text_auto=',.0f')
+            fig_plz = px.bar(df_plaza, x='NETO', y='PLAZA', orientation='h', title="Monto Neto por Plaza (S/)", text_auto=',.0f', color_discrete_sequence=['#1E3A8A'])
+            fig_plz.update_layout(template="plotly_white")
             st.plotly_chart(fig_plz, use_container_width=True)
     with col_b:
         if not df_flt_prod.empty and col_jefe_exacta:
             df_jefe = df_flt_prod.groupby(col_jefe_exacta)['NETO'].sum().reset_index().sort_values('NETO', ascending=True)
-            fig_jefe = px.bar(df_jefe, x=col_jefe_exacta, y='NETO', orientation='h', title="Monto Neto por Jefe Zonal (S/)", text_auto=',.0f')
+            fig_jefe = px.bar(df_jefe, x='NETO', y=col_jefe_exacta, orientation='h', title="Monto Neto por Jefe Zonal (S/)", text_auto=',.0f', color_discrete_sequence=['#047857'])
+            fig_jefe.update_layout(template="plotly_white")
             st.plotly_chart(fig_jefe, use_container_width=True)
 
-# --- PESTAÑA 4: MOTOR MONTE CARLO CON PUNTOS Y MONTOS COMPACTOS ---
+# --- PESTAÑA 4: MONTE CARLO ---
 with tab4:
     st.subheader("🎲 Motor Estocástico Monte Carlo (100,000 Escenarios - Convenios Perú)")
     st.markdown("Proyección basada en el **promedio mensual histórico real** de la matriz, calibrada con la sensibilidad de créditos por planilla (Picos en Noviembre, Diciembre y Julio).")
@@ -347,35 +414,31 @@ with tab4:
         'Optimista (P90)': p90_l
     })
 
-    # Columnas con formato compacto para etiquetas y hovers
     df_res_mc['P10_FMT'] = df_res_mc['Pesimista (P10)'].apply(formato_compacto_limpio)
     df_res_mc['P50_FMT'] = df_res_mc['Base / Esperado (P50)'].apply(formato_compacto_limpio)
     df_res_mc['P90_FMT'] = df_res_mc['Optimista (P90)'].apply(formato_compacto_limpio)
 
-    # Gráfico con puntos (markers=True)
     fig_mc = px.line(
         df_res_mc, x='Mes', y=['Pesimista (P10)', 'Base / Esperado (P50)', 'Optimista (P90)'],
         title="Proyección Anual de Bandas Estacionales Perú - Convenios (S/)",
         markers=True,
         color_discrete_map={
-            'Pesimista (P10)': '#ef4444',
-            'Base / Esperado (P50)': '#3b82f6',
-            'Optimista (P90)': '#10b981'
+            'Pesimista (P10)': '#EF4444',
+            'Base / Esperado (P50)': '#2563EB',
+            'Optimista (P90)': '#10B981'
         }
     )
 
-    # Actualizar formato de texto y puntos para que aparezcan montos compactos limpios
     fig_mc.update_traces(
         mode='lines+markers+text',
         textposition='top center'
     )
     
-    # Asignar textos compactos específicos a cada traza para evitar saturación (mostramos P50 legible o todas según preferencia)
     fig_mc.data[0].text = df_res_mc['P10_FMT']
     fig_mc.data[1].text = df_res_mc['P50_FMT']
     fig_mc.data[2].text = df_res_mc['P90_FMT']
 
-    fig_mc.update_layout(height=500, yaxis_title="Monto Proyectado (S/)")
+    fig_mc.update_layout(height=500, yaxis_title="Monto Proyectado (S/)", template="plotly_white")
     st.plotly_chart(fig_mc, use_container_width=True)
 
     st.markdown("### 📋 Resumen Financiero Proyectado Estacional (S/)")
