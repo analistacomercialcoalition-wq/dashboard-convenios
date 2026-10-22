@@ -60,6 +60,10 @@ def cargar_datos_corporativos():
     df['AÑO_MES_SOLICITUD'] = df['FECHA_SOLICITUD_DT'].dt.to_period('M').astype(str)
     df['FECHA_SOLICITUD_CORTE'] = df['FECHA_SOLICITUD_DT'].dt.date
     
+    # Identificación del ID de Solicitud / Cliente para desduplicar
+    cols_id = [c for c in df.columns if any(k in c.upper() for k in ['ID', 'SOLICITUD', 'DNI', 'CREDITO', 'OPERACION'])]
+    df['ID_SOLICITUD_UNICO'] = df[cols_id[0]].astype(str) if cols_id else df.index.astype(str)
+    
     return df
 
 with st.spinner("Sincronizando base de datos corporativa..."):
@@ -144,9 +148,10 @@ if sel_estados:
 if sel_meses:
     df_flt_prod = df_flt_prod[df_flt_prod['AÑO_MES'].isin(sel_meses)]
 
-# --- FILTRADO VINICULADO TOTAL PARA PESTAÑA REMESAS ---
+# --- FILTRADO Y DESDUPLICACIÓN PARA PESTAÑA REMESAS ---
 df_remesas = df_flt.copy()
 
+# 1. Filtro de Fecha de Solicitud
 if isinstance(rango_fechas, (list, tuple)) and len(rango_fechas) == 2:
     f_ini, f_fin = rango_fechas
     df_remesas = df_remesas[
@@ -154,11 +159,17 @@ if isinstance(rango_fechas, (list, tuple)) and len(rango_fechas) == 2:
         (df_remesas['FECHA_SOLICITUD_CORTE'] <= f_fin)
     ]
 
+# 2. Filtro de Estados
 if sel_estados:
     df_remesas = df_remesas[df_remesas['ESTADO'].isin(sel_estados)]
 
+# 3. Filtro de Meses (Año-Mes Solicitud)
 if sel_meses:
     df_remesas = df_remesas[df_remesas['AÑO_MES_SOLICITUD'].isin(sel_meses)]
+
+# 4. DESDUPLICACIÓN: 1 sola operación por ID en el mismo Mes de Solicitud
+if not df_remesas.empty:
+    df_remesas = df_remesas.drop_duplicates(subset=['ID_SOLICITUD_UNICO', 'AÑO_MES_SOLICITUD'], keep='first')
 
 st.markdown("---")
 
@@ -194,11 +205,11 @@ df_mensual = df_flt_prod.groupby('AÑO_MES').agg(
 ).reset_index() if not df_flt_prod.empty else pd.DataFrame()
 
 # ==========================================
-# 5. ESTRUCTURA DE PESTAÑAS (REMESAS TOTALMENTE VINCULADA)
+# 5. ESTRUCTURA DE PESTAÑAS (REMESAS DESDUPLICADAS POR MES)
 # ==========================================
 tab1, tab2, tab3, tab4 = st.tabs([
     "📊 Producción Total por Mes", 
-    "📦 Remesas (Cantidades de Solicitudes)", 
+    "📦 Remesas (Solicitudes Únicas / Mes)", 
     "🏆 Red Comercial & Ranking", 
     "🎲 Monte Carlo (Estacionalidad Convenios Perú)"
 ])
@@ -222,22 +233,22 @@ with tab1:
     else:
         st.info("No se encontraron registros de producción con los filtros seleccionados.")
 
-# --- PESTAÑA 2: REMESAS (TOTALMENTE FILTRADA Y VINCULADA) ---
+# --- PESTAÑA 2: REMESAS DESDUPLICADAS ---
 with tab2:
-    st.subheader("📦 Volumen y Cantidad de Remesas Ingresadas")
-    st.markdown("Monitoreo de **volumen de solicitudes** sincronizado con todos los filtros de Jerarquía Comercial, Fecha, Estados y Meses seleccionados.")
+    st.subheader("📦 Volumen de Remesas Únicas por Mes de Solicitud")
+    st.markdown("Se consideran **solicitudes desduplicadas** (1 sola entrada por cliente/solicitud dentro del mismo mes de solicitud).")
 
     rem_total_ops = len(df_remesas)
     rem_dias_sol = df_remesas['FECHA_SOLICITUD_CORTE'].nunique() if not df_remesas.empty else 0
     rem_prom_diario_ops = rem_total_ops / rem_dias_sol if rem_dias_sol > 0 else 0
     rem_total_monto = df_remesas['NETO'].sum() if not df_remesas.empty else 0
 
-    # KPIs centrados en Cantidad de Operaciones
+    # KPIs de Remesas Desduplicadas
     r_kpi1, r_kpi2, r_kpi3, r_kpi4 = st.columns(4)
-    r_kpi1.metric("📥 Total Solicitudes Filtradas", f"{rem_total_ops:,} Ops")
+    r_kpi1.metric("📥 Remesas Únicas Solicitadas", f"{rem_total_ops:,} Ops")
     r_kpi2.metric("📊 Promedio Diario de Solicitudes", f"{rem_prom_diario_ops:,.1f} Ops/Día")
     r_kpi3.metric("🗓️ Días Con Solicitudes", f"{rem_dias_sol:,} Días")
-    r_kpi4.metric("💰 Monto Referencial Solicitado", formato_compacto_limpio(rem_total_monto))
+    r_kpi4.metric("💰 Monto Neto Solicitado Único", formato_compacto_limpio(rem_total_monto))
 
     st.markdown("---")
 
@@ -255,15 +266,15 @@ with tab2:
                 x='AÑO_MES_SOLICITUD',
                 y='CANTIDAD_SOLICITUDES',
                 text='CANTIDAD_SOLICITUDES',
-                title="Evolución de Cantidad de Remesas por Mes (Sincronizada)",
-                labels={'AÑO_MES_SOLICITUD': 'Mes de Solicitud', 'CANTIDAD_SOLICITUDES': 'N° de Solicitudes'},
+                title="Evolución Mensual de Remesas Únicas (Fecha de Solicitud)",
+                labels={'AÑO_MES_SOLICITUD': 'Mes de Solicitud', 'CANTIDAD_SOLICITUDES': 'N° Solicitudes Únicas'},
                 color_discrete_sequence=['#0d9488']
             )
             fig_rem_bar.update_traces(texttemplate='%{text:,} Ops', textposition='outside')
             fig_rem_bar.update_layout(height=450)
             st.plotly_chart(fig_rem_bar, use_container_width=True)
         else:
-            st.info("No hay remesas que coincidan con la combinación exacta de Estado y Meses seleccionados.")
+            st.info("No hay remesas únicas que coincidan con los filtros seleccionados.")
 
     with col_r2:
         if not df_remesas.empty:
@@ -273,7 +284,7 @@ with tab2:
                 df_est,
                 names='ESTADO',
                 values='CANTIDAD',
-                title="Distribución por Estado (Filtrada)",
+                title="Distribución por Estado (Operaciones Únicas)",
                 hole=0.4,
                 color_discrete_sequence=px.colors.qualitative.Set2
             )
