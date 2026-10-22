@@ -339,7 +339,7 @@ df_mensual = df_flt_prod.groupby('AÑO_MES_DESEMBOLSO').agg(
 ).reset_index() if not df_flt_prod.empty else pd.DataFrame()
 
 # ==========================================
-# 4. ESTRUCTURA DE PESTAÑAS (INCLUYE CRUCE Y CUMPLIMIENTO)
+# 4. ESTRUCTURA DE PESTAÑAS (INCLUJE CRUCE Y CUMPLIMIENTO)
 # ==========================================
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📊 Producción Total por Mes", 
@@ -450,42 +450,56 @@ with tab3:
 
 # --- PESTAÑA 4: METAS Y CUMPLIMIENTO ---
 with tab4:
-    st.subheader("🎯 Matriz de Metas y Cumplimiento Gerencial por Jefe Zonal")
-    st.markdown("Cruce dinámico entre la producción real ejecutada y las metas de operaciones y monto.")
+    st.subheader("🎯 Matriz de Metas y Cumplimiento Gerencial (Jefe Zonal y Supervisor)")
+    st.markdown("Comparativa directa entre la producción real ejecutada y las metas comerciales asignadas por **Jefe Zonal** y **Supervisor**.")
     
-    if not df_metas.empty and not df_flt_prod.empty and col_jefe_exacta:
-        # Calcular real por jefe zonal en el dataset filtrado
-        df_real_jefe = df_flt_prod.groupby(col_jefe_exacta).agg(
-            REAL_OPERACIONES=('NETO', 'count'),
-            REAL_MONTO=('NETO', 'sum')
-        ).reset_index()
+    if not df_metas.empty and not df_flt_prod.empty:
+        col_sup_exacta = 'SUPERVISOR' if 'SUPERVISOR' in df_base.columns else None
         
-        # Identificar las columnas de jefe en el df de metas
-        col_jefe_metas = next((c for c in df_metas.columns if 'JEFE' in c.upper() or 'ZONAL' in c.upper() or 'NOMBRE' in c.upper()), df_metas.columns[0])
-        
-        # Limpiar texto para cruce exacto
-        df_metas['JEFE_JOIN'] = df_metas[col_jefe_metas].astype(str).str.strip().str.upper()
-        df_real_jefe['JEFE_JOIN'] = df_real_jefe[col_jefe_exacta].astype(str).str.strip().str.upper()
-        
-        # Merge de Metas con Real
-        df_cruce = pd.merge(df_metas, df_real_jefe, on='JEFE_JOIN', how='left').fillna(0)
-        
-        # Asegurar columnas numéricas para metas
-        if 'Meta de operaciones' in df_cruce.columns:
-            df_cruce['Meta de operaciones'] = pd.to_numeric(df_cruce['Meta de operaciones'].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
-            df_cruce['% Cumplimiento Ops'] = np.where(df_cruce['Meta de operaciones'] > 0, (df_cruce['REAL_OPERACIONES'] / df_cruce['Meta de operaciones']) * 100, 0)
-        
-        if 'Meta de monto' in df_cruce.columns:
-            df_cruce['Meta de monto'] = pd.to_numeric(df_cruce['Meta de monto'].astype(str).str.replace(',', '').str.replace('S/', ''), errors='coerce').fillna(0)
-            df_cruce['% Cumplimiento Monto'] = np.where(df_cruce['Meta de monto'] > 0, (df_cruce['REAL_MONTO'] / df_cruce['Meta de monto']) * 100, 0)
+        if col_jefe_exacta and col_sup_exacta:
+            # Agrupar producción real por Jefe Zonal y Supervisor
+            df_real_js = df_flt_prod.groupby([col_jefe_exacta, col_sup_exacta]).agg(
+                REAL_OPERACIONES=('NETO', 'count'),
+                REAL_MONTO=('NETO', 'sum')
+            ).reset_index()
+            
+            # Detectar columnas correspondientes en el reporte de metas
+            cols_meta_jefe = [c for c in df_metas.columns if 'JEFE' in c.upper() or 'ZONAL' in c.upper()]
+            cols_meta_sup = [c for c in df_metas.columns if 'SUPERVISOR' in c.upper()]
+            
+            c_jefe_m = cols_meta_jefe[0] if cols_meta_jefe else df_metas.columns[0]
+            c_sup_m = cols_meta_sup[0] if cols_meta_sup else df_metas.columns[1] if len(df_metas.columns) > 1 else df_metas.columns[0]
+            
+            # Normalizar textos para cruce exacto
+            df_metas['JEFE_JOIN'] = df_metas[c_jefe_m].astype(str).str.strip().str.upper()
+            df_metas['SUP_JOIN'] = df_metas[c_sup_m].astype(str).str.strip().str.upper()
+            
+            df_real_js['JEFE_JOIN'] = df_real_js[col_jefe_exacta].astype(str).str.strip().str.upper()
+            df_real_js['SUP_JOIN'] = df_real_js[col_sup_exacta].astype(str).str.strip().str.upper()
+            
+            # Cruce de Metas con Real por Jefe y Supervisor
+            df_cruce = pd.merge(df_metas, df_real_js, on=['JEFE_JOIN', 'SUP_JOIN'], how='left').fillna(0)
+            
+            # Limpiar y asegurar formato numérico en metas
+            if 'Meta de operaciones' in df_cruce.columns:
+                df_cruce['Meta de operaciones'] = pd.to_numeric(df_cruce['Meta de operaciones'].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
+                df_cruce['% Cumplimiento Ops'] = np.where(df_cruce['Meta de operaciones'] > 0, (df_cruce['REAL_OPERACIONES'] / df_cruce['Meta de operaciones']) * 100, 0)
+                df_cruce['% Cumplimiento Ops'] = df_cruce['% Cumplimiento Ops'].round(2).astype(str) + '%'
+            
+            if 'Meta de monto' in df_cruce.columns:
+                df_cruce['Meta de monto'] = pd.to_numeric(df_cruce['Meta de monto'].astype(str).str.replace(',', '').str.replace('S/', ''), errors='coerce').fillna(0)
+                df_cruce['% Cumplimiento Monto'] = np.where(df_cruce['Meta de monto'] > 0, (df_cruce['REAL_MONTO'] / df_cruce['Meta de monto']) * 100, 0)
+                df_cruce['% Cumplimiento Monto'] = df_cruce['% Cumplimiento Monto'].round(2).astype(str) + '%'
 
-        # Mostrar tabla gerencial con formato limpio
-        cols_mostrar = [col_jefe_metas, 'Meta de operaciones', 'REAL_OPERACIONES', '% Cumplimiento Ops', 'Meta de monto', 'REAL_MONTO', '% Cumplimiento Monto']
-        cols_finales = [c for c in cols_mostrar if c in df_cruce.columns]
-        
-        st.dataframe(df_cruce[cols_finales], use_container_width=True)
+            # Columnas finales a mostrar
+            cols_mostrar = [c_jefe_m, c_sup_m, 'Meta de operaciones', 'REAL_OPERACIONES', '% Cumplimiento Ops', 'Meta de monto', 'REAL_MONTO', '% Cumplimiento Monto']
+            cols_finales = [c for c in cols_mostrar if c in df_cruce.columns]
+            
+            st.dataframe(df_cruce[cols_finales], use_container_width=True)
+        else:
+            st.warning("No se encontraron las columnas de Jefe Zonal o Supervisor en la matriz principal.")
     else:
-        st.info("No se pudo realizar el cruce. Verifique que la pestaña 'REPORTE VENTA j Jefe' contenga datos y columnas de metas válidas.")
+        st.info("No se pudo realizar el cruce. Verifique que la pestaña 'REPORTE VENTA j Jefe' contenga datos válidos.")
 
 # --- PESTAÑA 5: MONTE CARLO ---
 with tab5:
