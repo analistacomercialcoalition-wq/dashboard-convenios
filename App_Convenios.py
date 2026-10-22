@@ -144,6 +144,24 @@ def cargar_datos_corporativos():
     try:
         df_metas = pd.read_csv(sheet_url_metas, dtype=str)
         df_metas.columns = df_metas.columns.str.strip()
+        
+        # Corrección de columnas duplicadas
+        cols = pd.Series(df_metas.columns)
+        for dup in cols[cols.duplicated()].unique():
+            cols[cols[cols == dup].index.values.tolist()] = [dup + f'_{i}' if i != 0 else dup for i in range(sum(cols == dup))]
+        df_metas.columns = cols
+
+        # Renombrar encabezados específicos de metas solicitado por Luigi
+        nuevos_nombres = {}
+        for col in df_metas.columns:
+            col_upper = col.upper()
+            if 'META' in col_upper and 'OPERACION' in col_upper:
+                nuevos_nombres[col] = 'Meta de operaciones'
+            elif 'META' in col_upper and 'OCTUBRE' in col_upper:
+                nuevos_nombres[col] = 'Meta de monto'
+        
+        df_metas = df_metas.rename(columns=nuevos_nombres)
+        
     except Exception:
         df_metas = pd.DataFrame()
     
@@ -175,7 +193,6 @@ CREDENCIALES_USUARIOS = {
     }
 }
 
-# Campos vacíos por defecto obligatorios
 input_correo = st.sidebar.text_input("Correo Corporativo:", value="").strip().lower()
 input_pass = st.sidebar.text_input("Contraseña:", type="password", value="").strip()
 
