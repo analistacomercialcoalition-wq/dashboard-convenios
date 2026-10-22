@@ -91,7 +91,7 @@ with col_tit:
 st.markdown("---")
 
 # ==========================================
-# 1. CARGA Y LIMPIEZA DE DATOS (HOJA 1 Y REPORTE VENTA j Jefe)
+# 1. CARGA Y LIMPIEZA DE DATOS (HOJA 1 Y PESTAÑAS ADICIONALES)
 # ==========================================
 @st.cache_data(ttl=600)
 def cargar_datos_corporativos():
@@ -106,7 +106,7 @@ def cargar_datos_corporativos():
         errors='coerce'
     ).fillna(0)
 
-    # Limpieza rigurosa de texto incluyendo TERRITORIAL
+    # Limpieza rigurosa de texto
     cols_a_limpiar = ['TERRITORIAL', 'ZONA', 'PLAZA', 'JEFE ZONAL', 'SUPERVISOR', 'ASESOR CORRECTO', 'ESTADO']
     for col in cols_a_limpiar:
         if col in df.columns:
@@ -139,15 +139,17 @@ def cargar_datos_corporativos():
     df['ID_UNICO'] = df[cols_id[0]].astype(str).str.strip() if cols_id else df.index.astype(str)
     df = df.drop_duplicates(subset=['ID_UNICO', 'AÑO_MES_SOLICITUD'], keep='first')
 
-    # Carga de la pestaña REPORTE VENTA (Vista completa de ventas)
+    # Carga de la pestaña Reporte Venta
     sheet_url_venta = "https://docs.google.com/spreadsheets/d/1IBvyIN5H1jYrwEAOD9E5nTCpaBLqxD109HMKCW0Ezt8/gviz/tq?tqx=out:csv&sheet=Reporte%20Venta"
     try:
         df_reporte_venta = pd.read_csv(sheet_url_venta, dtype=str)
         df_reporte_venta.columns = df_reporte_venta.columns.str.strip()
+        for c in df_reporte_venta.columns:
+            df_reporte_venta[c] = df_reporte_venta[c].fillna('').astype(str).str.strip().str.upper()
     except Exception:
         df_reporte_venta = pd.DataFrame()
 
-    # Carga de la pestaña REPORTE VENTA j Jefe (Vista de Jefes y Metas)
+    # Carga de la pestaña REPORTE VENTA j Jefe
     sheet_url_jefe = "https://docs.google.com/spreadsheets/d/1IBvyIN5H1jYrwEAOD9E5nTCpaBLqxD109HMKCW0Ezt8/gviz/tq?tqx=out:csv&sheet=REPORTE%20VENTA%20j%20Jefe"
     try:
         df_reporte_jefe = pd.read_csv(sheet_url_jefe, dtype=str)
@@ -176,6 +178,9 @@ def cargar_datos_corporativos():
                 nuevos_nombres[col] = 'Meta de monto'
         
         df_reporte_jefe = df_reporte_jefe.rename(columns=nuevos_nombres)
+
+        for c in df_reporte_jefe.columns:
+            df_reporte_jefe[c] = df_reporte_jefe[c].fillna('').astype(str).str.strip().str.upper()
         
     except Exception:
         df_reporte_jefe = pd.DataFrame()
@@ -347,7 +352,52 @@ df_mensual = df_flt_prod.groupby('AÑO_MES_DESEMBOLSO').agg(
 ).reset_index() if not df_flt_prod.empty else pd.DataFrame()
 
 # ==========================================
-# 4. ESTRUCTURA DE PESTAÑAS (INCLUYE REPORTE VENTA Y REPORTE JEFE)
+# 4. APLICACIÓN DE FILTRADO CRUZADO PARA LAS PESTAÑAS ADICIONALES
+# ==========================================
+# Filtrado dinámico para Reporte Venta
+df_venta_filtrado = df_reporte_venta.copy()
+if not df_venta_filtrado.empty:
+    if sel_territorial != "TODOS" and 'TERRITORIAL' in df_venta_filtrado.columns:
+        df_venta_filtrado = df_venta_filtrado[df_venta_filtrado['TERRITORIAL'] == sel_territorial]
+    if sel_zona != "TODAS" and 'ZONA' in df_venta_filtrado.columns:
+        df_venta_filtrado = df_venta_filtrado[df_venta_filtrado['ZONA'] == sel_zona]
+    if sel_plaza != "TODAS" and 'PLAZA' in df_venta_filtrado.columns:
+        df_venta_filtrado = df_venta_filtrado[df_venta_filtrado['PLAZA'] == sel_plaza]
+    if sel_jefe != "TODOS":
+        col_j_v = next((c for c in df_venta_filtrado.columns if 'JEFE' in c.upper() or 'ZONAL' in c.upper()), None)
+        if col_j_v:
+            df_venta_filtrado = df_venta_filtrado[df_venta_filtrado[col_j_v] == sel_jefe]
+    if sel_sup != "TODOS":
+        col_s_v = next((c for c in df_venta_filtrado.columns if 'SUPERVISOR' in c.upper()), None)
+        if col_s_v:
+            df_venta_filtrado = df_venta_filtrado[df_venta_filtrado[col_s_v] == sel_sup]
+
+# Filtrado dinámico para Reporte Jefe
+df_jefe_filtrado = df_reporte_jefe.copy()
+if not df_jefe_filtrado.empty:
+    if sel_territorial != "TODOS":
+        col_t_j = next((c for c in df_jefe_filtrado.columns if 'TERRITORIAL' in c.upper()), None)
+        if col_t_j:
+            df_jefe_filtrado = df_jefe_filtrado[df_jefe_filtrado[col_t_j] == sel_territorial]
+    if sel_zona != "TODAS":
+        col_z_j = next((c for c in df_jefe_filtrado.columns if 'ZONA' in c.upper()), None)
+        if col_z_j:
+            df_jefe_filtrado = df_jefe_filtrado[df_jefe_filtrado[col_z_j] == sel_zona]
+    if sel_plaza != "TODAS":
+        col_p_j = next((c for c in df_jefe_filtrado.columns if 'PLAZA' in c.upper()), None)
+        if col_p_j:
+            df_jefe_filtrado = df_jefe_filtrado[df_jefe_filtrado[col_p_j] == sel_plaza]
+    if sel_jefe != "TODOS":
+        col_j_j = next((c for c in df_jefe_filtrado.columns if 'JEFE' in c.upper() or 'ZONAL' in c.upper()), None)
+        if col_j_j:
+            df_jefe_filtrado = df_jefe_filtrado[df_jefe_filtrado[col_j_j] == sel_jefe]
+    if sel_sup != "TODOS":
+        col_s_j = next((c for c in df_jefe_filtrado.columns if 'SUPERVISOR' in c.upper()), None)
+        if col_s_j:
+            df_jefe_filtrado = df_jefe_filtrado[df_jefe_filtrado[col_s_j] == sel_sup]
+
+# ==========================================
+# 5. ESTRUCTURA DE PESTAÑAS DEL DASHBOARD
 # ==========================================
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "📊 Producción Total por Mes", 
@@ -457,23 +507,23 @@ with tab3:
             fig_jefe.update_layout(template="plotly_white")
             st.plotly_chart(fig_jefe, use_container_width=True)
 
-# --- PESTAÑA 4: REPORTE VENTA ---
+# --- PESTAÑA 4: REPORTE VENTA (FILTRADO CRUZADO) ---
 with tab4:
-    st.subheader("📑 Pestaña: Reporte Venta (Vista Completa)")
-    st.markdown("Visualización íntegra de la información extraída de la pestaña **Reporte Venta**.")
-    if not df_reporte_venta.empty:
-        st.dataframe(df_reporte_venta, use_container_width=True)
+    st.subheader("📑 Pestaña: Reporte Venta (Filtrado Dinámico)")
+    st.markdown("Visualización cruzada con los filtros gerenciales de la barra lateral.")
+    if not df_venta_filtrado.empty:
+        st.dataframe(df_venta_filtrado, use_container_width=True)
     else:
-        st.info("No se encontró información en la pestaña 'Reporte Venta'.")
+        st.info("No se encontraron registros en 'Reporte Venta' para los filtros seleccionados.")
 
-# --- PESTAÑA 5: REPORTE JEFE ---
+# --- PESTAÑA 5: REPORTE JEFE (FILTRADO CRUZADO) ---
 with tab5:
-    st.subheader("👔 Pestaña: Reporte Venta j Jefe (Vista Completa)")
-    st.markdown("Visualización íntegra de la pestaña de Jefes con las columnas de metas actualizadas.")
-    if not df_reporte_jefe.empty:
-        st.dataframe(df_reporte_jefe, use_container_width=True)
+    st.subheader("👔 Pestaña: Reporte Venta j Jefe (Filtrado Dinámico)")
+    st.markdown("Visualización cruzada con los filtros gerenciales (Jefe Zonal, Territorial, etc.).")
+    if not df_jefe_filtrado.empty:
+        st.dataframe(df_jefe_filtrado, use_container_width=True)
     else:
-        st.info("No se encontró información en la pestaña 'REPORTE VENTA j Jefe'.")
+        st.info("No se encontraron registros en 'REPORTE VENTA j Jefe' para los filtros seleccionados.")
 
 # --- PESTAÑA 6: MONTE CARLO ---
 with tab6:
