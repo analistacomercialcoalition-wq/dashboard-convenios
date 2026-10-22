@@ -26,7 +26,7 @@ st.markdown("### **Coalition Group — Matriz de Colocaciones, Remesas y Proyecc
 st.markdown("---")
 
 # ==========================================
-# 1. CARGA Y LIMPIEZA STRICTA DD/MM/YYYY
+# 1. CARGA Y LIMPIEZA DE DATOS (PARSEO PERUANO DD/MM/YYYY)
 # ==========================================
 @st.cache_data(ttl=600)
 def cargar_datos_corporativos():
@@ -42,27 +42,23 @@ def cargar_datos_corporativos():
 
     # 1. Parseo estricto de FECHA DE SOLICITUD (Formato Peruano DD/MM/YYYY)
     df['FECHA_SOLICITUD_DT'] = pd.to_datetime(df['FECHA DE SOLICITUD'], format='%d/%m/%Y', errors='coerce')
-    
-    # Si alguna fecha falló por venir con guiones o sin ceros a la izquierda
     mask_null_sol = df['FECHA_SOLICITUD_DT'].isna() & df['FECHA DE SOLICITUD'].notna()
     if mask_null_sol.any():
         df.loc[mask_null_sol, 'FECHA_SOLICITUD_DT'] = pd.to_datetime(
             df.loc[mask_null_sol, 'FECHA DE SOLICITUD'], dayfirst=True, errors='coerce'
         )
-
     df['AÑO_MES_SOLICITUD'] = df['FECHA_SOLICITUD_DT'].dt.to_period('M').astype(str)
 
-    # 2. Parseo estricto de FECHA DE DESEMBOLSO (DD/MM/YYYY)
+    # 2. Parseo estricto de FECHA DE DESEMBOLSO (Formato Peruano DD/MM/YYYY)
     df['FECHA_DESEMBOLSO_DT'] = pd.to_datetime(df['FECHA DE DESEMBOLSO'], format='%d/%m/%Y', errors='coerce')
     mask_null_des = df['FECHA_DESEMBOLSO_DT'].isna() & df['FECHA DE DESEMBOLSO'].notna()
     if mask_null_des.any():
         df.loc[mask_null_des, 'FECHA_DESEMBOLSO_DT'] = pd.to_datetime(
             df.loc[mask_null_des, 'FECHA DE DESEMBOLSO'], dayfirst=True, errors='coerce'
         )
-
     df['AÑO_MES_DESEMBOLSO'] = df['FECHA_DESEMBOLSO_DT'].dt.to_period('M').astype(str)
 
-    # Eliminar filas vacías que no corresponden a operaciones reales
+    # Filtrar únicamente registros que contengan Fecha de Solicitud real
     df = df[df['FECHA_SOLICITUD_DT'].notna()]
     
     return df
@@ -70,26 +66,32 @@ def cargar_datos_corporativos():
 with st.spinner("Sincronizando base de datos corporativa completa..."):
     df_base = cargar_datos_corporativos()
 
+# Función auxiliar segura para ordenar listas con posibles valores mixtos
+def obtener_lista_ordenada_segura(serie):
+    elementos = serie.dropna().astype(str).unique()
+    elementos_limpios = [str(x).strip() for x in elementos if str(x).strip() not in ['', 'nan', 'NaT', 'None']]
+    return sorted(elementos_limpios)
+
 # ==========================================
 # 2. FILTROS EN BARRA LATERAL (JERARQUÍA COMERCIAL)
 # ==========================================
 st.sidebar.header("🔍 Panel de Filtros y Control")
 st.sidebar.subheader("🏢 Estructura Comercial")
 
-zonas = ["TODAS"] + sorted([x for x in df_base['ZONA'].dropna().unique() if str(x).strip() != ''])
+zonas = ["TODAS"] + obtener_lista_ordenada_segura(df_base['ZONA'])
 sel_zona = st.sidebar.selectbox("Zona", zonas)
 
-plazas = ["TODAS"] + sorted([x for x in df_base['PLAZA'].dropna().unique() if str(x).strip() != ''])
+plazas = ["TODAS"] + obtener_lista_ordenada_segura(df_base['PLAZA'])
 sel_plaza = st.sidebar.selectbox("Plaza", plazas)
 
 col_jefe_nom = 'JDN' if 'JDN' in df_base.columns else 'JEFE ZONAL'
-jefes = ["TODOS"] + sorted([x for x in df_base[col_jefe_nom].dropna().unique() if str(x).strip() != ''])
+jefes = ["TODOS"] + obtener_lista_ordenada_segura(df_base[col_jefe_nom])
 sel_jefe = st.sidebar.selectbox("Jefe Zonal / JDN", jefes)
 
-supervisores = ["TODOS"] + (sorted([x for x in df_base['SUPERVISOR'].dropna().unique() if str(x).strip() != '']) if 'SUPERVISOR' in df_base.columns else [])
+supervisores = ["TODOS"] + (obtener_lista_ordenada_segura(df_base['SUPERVISOR']) if 'SUPERVISOR' in df_base.columns else [])
 sel_sup = st.sidebar.selectbox("Supervisor", supervisores)
 
-asesores = ["TODOS"] + (sorted([x for x in df_base['ASESOR CORRECTO'].dropna().unique() if str(x).strip() != '']) if 'ASESOR CORRECTO' in df_base.columns else [])
+asesores = ["TODOS"] + (obtener_lista_ordenada_segura(df_base['ASESOR CORRECTO']) if 'ASESOR CORRECTO' in df_base.columns else [])
 sel_asesor = st.sidebar.selectbox("Asesor", asesores)
 
 df_flt = df_base.copy()
@@ -105,13 +107,13 @@ if sel_asesor != "TODOS" and 'ASESOR CORRECTO' in df_flt.columns:
     df_flt = df_flt[df_flt['ASESOR CORRECTO'] == sel_asesor]
 
 # ==========================================
-# 3. FILTROS EN ENCABEZADO SUPERIOR
+# 3. FILTROS EN ENCABEZADO SUPERIOR (SEGURO)
 # ==========================================
 st.markdown("### 🎛️ Filtros de Control Temporal y Estado")
 f_col1, f_col2, f_col3 = st.columns(3)
 
 with f_col1:
-    estados_disp = sorted([x for x in df_flt['ESTADO'].dropna().unique() if str(x).strip() != ''])
+    estados_disp = obtener_lista_ordenada_segura(df_flt['ESTADO'])
     sel_estados_prod = st.multiselect(
         "📌 Estado Operación (Filtro Producción)", 
         options=estados_disp, 
@@ -119,7 +121,7 @@ with f_col1:
     )
 
 with f_col2:
-    meses_des_disp = sorted([m for m in df_base['AÑO_MES_DESEMBOLSO'].unique() if m != 'NaT'])
+    meses_des_disp = obtener_lista_ordenada_segura(df_base['AÑO_MES_DESEMBOLSO'])
     sel_meses_desembolso = st.multiselect(
         "🗓️ Meses Desembolso (Filtro Producción)", 
         options=meses_des_disp, 
@@ -127,7 +129,7 @@ with f_col2:
     )
 
 with f_col3:
-    meses_sol_disp = sorted([m for m in df_base['AÑO_MES_SOLICITUD'].unique() if m != 'NaT'])
+    meses_sol_disp = obtener_lista_ordenada_segura(df_base['AÑO_MES_SOLICITUD'])
     sel_meses_remesa = st.multiselect(
         "📥 Filtrar Meses de Remesa (Fecha Solicitud)", 
         options=meses_sol_disp, 
@@ -213,7 +215,7 @@ with tab2:
     st.markdown("Contabiliza el total de celdas de la hoja de cálculo agrupadas por su **`FECHA DE SOLICITUD`**.")
 
     # Filtro interno opcional de Estado
-    est_rem_disp = ["TODOS"] + sorted([x for x in df_remesas['ESTADO'].dropna().unique() if str(x).strip() != ''])
+    est_rem_disp = ["TODOS"] + obtener_lista_ordenada_segura(df_remesas['ESTADO'])
     sel_est_rem = st.selectbox("📌 Filtrar Estado interno en Remesas (Opcional):", est_rem_disp)
     
     df_rem_tab = df_remesas.copy()
@@ -238,7 +240,7 @@ with tab2:
     with col_r1:
         if not df_rem_tab.empty:
             df_rem_mensual = df_rem_tab.groupby('AÑO_MES_SOLICITUD').size().reset_index(name='CANTIDAD_SOLICITUDES')
-            df_rem_mensual = df_rem_mensual[df_rem_mensual['AÑO_MES_SOLICITUD'] != 'NaT'].sort_values('AÑO_MES_SOLICITUD')
+            df_rem_mensual = df_rem_mensual.sort_values('AÑO_MES_SOLICITUD')
 
             fig_rem_bar = px.bar(
                 df_rem_mensual,
@@ -295,50 +297,4 @@ with tab4:
         f_jul = st.slider("Factor Julio (Gratificación Fiestas Patrias)", 1.0, 1.8, 1.25)
         f_nov = st.slider("Factor Noviembre (CTS y Pre-cierre)", 1.0, 1.8, 1.20)
         f_dic = st.slider("Factor Diciembre (Aguinaldo / Navidad)", 1.0, 2.0, 1.35)
-        f_mar = st.slider("Factor Marzo (Campaña Escolar)", 0.8, 1.4, 1.10)
-
-    if st.button("🚀 Ejecutar Simulación 100k Escenarios Estacionales"):
-        base_mensual_historica = df_mensual['MONTO_TOTAL_NETO'].mean() if not df_mensual.empty else 35000000
-        std_mensual_historica = df_mensual['MONTO_TOTAL_NETO'].std() if (not df_mensual.empty and len(df_mensual) > 1) else base_mensual_historica * 0.12
-
-        factores_peru = {
-            'Enero': 0.85, 'Febrero': 0.90, 'Marzo': f_mar, 'Abril': 1.00,
-            'Mayo': 1.02, 'Junio': 1.08, 'Julio': f_jul, 'Agosto': 0.95,
-            'Setiembre': 1.00, 'Octubre': 1.05, 'Noviembre': f_nov, 'Diciembre': f_dic
-        }
-
-        sims = 100000
-        np.random.seed(42)
-        meses_nombres = list(factores_peru.keys())
-        p10_l, p50_l, p90_l = [], [], []
-
-        for m in meses_nombres:
-            factor = factores_peru[m]
-            media_mes = base_mensual_historica * factor
-            std_mes = max(std_mensual_historica * factor, base_mensual_historica * 0.05)
-            
-            totales = np.random.normal(loc=media_mes, scale=std_mes, size=sims)
-            totales = np.clip(totales, 0, None)
-
-            p10_l.append(np.percentile(totales, 10))
-            p50_l.append(np.percentile(totales, 50))
-            p90_l.append(np.percentile(totales, 90))
-
-        df_res_mc = pd.DataFrame({
-            'Mes': meses_nombres,
-            'Pesimista (P10)': p10_l,
-            'Base / Esperado (P50)': p50_l,
-            'Optimista (P90)': p90_l
-        })
-
-        fig_mc = px.line(
-            df_res_mc, x='Mes', y=['Pesimista (P10)', 'Base / Esperado (P50)', 'Optimista (P90)'],
-            title="Proyección Anual de Bandas Estacionales Perú - Convenios (S/)", markers=True
-        )
-        st.plotly_chart(fig_mc, use_container_width=True)
-
-        st.markdown("### 📋 Resumen Financiero Proyectado Estacional (S/)")
-        df_show = df_res_mc.copy()
-        for col in ['Pesimista (P10)', 'Base / Esperado (P50)', 'Optimista (P90)']:
-            df_show[col] = df_show[col].apply(formato_compacto_limpio)
-        st.dataframe(df_show, use_container_width=True)
+        f
