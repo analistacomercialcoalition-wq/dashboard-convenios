@@ -145,7 +145,7 @@ def cargar_datos_corporativos():
         df_metas = pd.read_csv(sheet_url_metas, dtype=str)
         df_metas.columns = df_metas.columns.str.strip()
         
-        # ELIMINAR O RENOMBRAR COLUMNAS DUPLICADAS AUTOMÁTICAMENTE
+        # Eliminar duplicados en encabezados automáticamente
         nuevas_cols = []
         contador_cols = {}
         for c in df_metas.columns:
@@ -158,7 +158,7 @@ def cargar_datos_corporativos():
                 nuevas_cols.append(c_limpia)
         df_metas.columns = nuevas_cols
 
-        # Renombrar encabezados específicos de metas solicitado por Luigi
+        # Renombrar encabezados específicos de metas solicitado
         nuevos_nombres = {}
         for col in df_metas.columns:
             col_upper = col.upper()
@@ -339,7 +339,7 @@ df_mensual = df_flt_prod.groupby('AÑO_MES_DESEMBOLSO').agg(
 ).reset_index() if not df_flt_prod.empty else pd.DataFrame()
 
 # ==========================================
-# 4. ESTRUCTURA DE PESTAÑAS (INCLUYE METAS Y CUMPLIMIENTO)
+# 4. ESTRUCTURA DE PESTAÑAS (INCLUYE CRUCE Y CUMPLIMIENTO)
 # ==========================================
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📊 Producción Total por Mes", 
@@ -450,13 +450,42 @@ with tab3:
 
 # --- PESTAÑA 4: METAS Y CUMPLIMIENTO ---
 with tab4:
-    st.subheader("🎯 Matriz de Metas y Cumplimiento Gerencial (REPORTE VENTA j Jefe)")
-    st.markdown("Comparativa directa entre la producción real ejecutada y las metas comerciales asignadas.")
+    st.subheader("🎯 Matriz de Metas y Cumplimiento Gerencial por Jefe Zonal")
+    st.markdown("Cruce dinámico entre la producción real ejecutada y las metas de operaciones y monto.")
     
-    if not df_metas.empty:
-        st.dataframe(df_metas, use_container_width=True)
+    if not df_metas.empty and not df_flt_prod.empty and col_jefe_exacta:
+        # Calcular real por jefe zonal en el dataset filtrado
+        df_real_jefe = df_flt_prod.groupby(col_jefe_exacta).agg(
+            REAL_OPERACIONES=('NETO', 'count'),
+            REAL_MONTO=('NETO', 'sum')
+        ).reset_index()
+        
+        # Identificar las columnas de jefe en el df de metas
+        col_jefe_metas = next((c for c in df_metas.columns if 'JEFE' in c.upper() or 'ZONAL' in c.upper() or 'NOMBRE' in c.upper()), df_metas.columns[0])
+        
+        # Limpiar texto para cruce exacto
+        df_metas['JEFE_JOIN'] = df_metas[col_jefe_metas].astype(str).str.strip().str.upper()
+        df_real_jefe['JEFE_JOIN'] = df_real_jefe[col_jefe_exacta].astype(str).str.strip().str.upper()
+        
+        # Merge de Metas con Real
+        df_cruce = pd.merge(df_metas, df_real_jefe, on='JEFE_JOIN', how='left').fillna(0)
+        
+        # Asegurar columnas numéricas para metas
+        if 'Meta de operaciones' in df_cruce.columns:
+            df_cruce['Meta de operaciones'] = pd.to_numeric(df_cruce['Meta de operaciones'].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
+            df_cruce['% Cumplimiento Ops'] = np.where(df_cruce['Meta de operaciones'] > 0, (df_cruce['REAL_OPERACIONES'] / df_cruce['Meta de operaciones']) * 100, 0)
+        
+        if 'Meta de monto' in df_cruce.columns:
+            df_cruce['Meta de monto'] = pd.to_numeric(df_cruce['Meta de monto'].astype(str).str.replace(',', '').str.replace('S/', ''), errors='coerce').fillna(0)
+            df_cruce['% Cumplimiento Monto'] = np.where(df_cruce['Meta de monto'] > 0, (df_cruce['REAL_MONTO'] / df_cruce['Meta de monto']) * 100, 0)
+
+        # Mostrar tabla gerencial con formato limpio
+        cols_mostrar = [col_jefe_metas, 'Meta de operaciones', 'REAL_OPERACIONES', '% Cumplimiento Ops', 'Meta de monto', 'REAL_MONTO', '% Cumplimiento Monto']
+        cols_finales = [c for c in cols_mostrar if c in df_cruce.columns]
+        
+        st.dataframe(df_cruce[cols_finales], use_container_width=True)
     else:
-        st.info("No se encontró información o la pestaña 'REPORTE VENTA j Jefe' está vacía o pendiente de sincronizar.")
+        st.info("No se pudo realizar el cruce. Verifique que la pestaña 'REPORTE VENTA j Jefe' contenga datos y columnas de metas válidas.")
 
 # --- PESTAÑA 5: MONTE CARLO ---
 with tab5:
