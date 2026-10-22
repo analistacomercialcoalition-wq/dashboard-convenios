@@ -26,7 +26,7 @@ st.markdown("### **Coalition Group — Matriz de Colocaciones, Remesas y Proyecc
 st.markdown("---")
 
 # ==========================================
-# 1. CARGA Y LIMPIEZA DE DATOS (PARSEO PERUANO DD/MM/YYYY)
+# 1. CARGA Y LIMPIEZA CON DESDUPLICACIÓN EXACTA
 # ==========================================
 @st.cache_data(ttl=600)
 def cargar_datos_corporativos():
@@ -40,33 +40,43 @@ def cargar_datos_corporativos():
         errors='coerce'
     ).fillna(0)
 
-    # 1. Parseo estricto de FECHA DE SOLICITUD (Formato Peruano DD/MM/YYYY)
-    df['FECHA_SOLICITUD_DT'] = pd.to_datetime(df['FECHA DE SOLICITUD'], format='%d/%m/%Y', errors='coerce')
-    mask_null_sol = df['FECHA_SOLICITUD_DT'].isna() & df['FECHA DE SOLICITUD'].notna()
+    # Parseo de Fecha de Solicitud (DD/MM/YYYY)
+    col_sol = [c for c in df.columns if 'SOLICITUD' in c.upper()][0]
+    df['FECHA_SOLICITUD_DT'] = pd.to_datetime(df[col_sol], format='%d/%m/%Y', errors='coerce')
+    mask_null_sol = df['FECHA_SOLICITUD_DT'].isna() & df[col_sol].notna()
     if mask_null_sol.any():
         df.loc[mask_null_sol, 'FECHA_SOLICITUD_DT'] = pd.to_datetime(
-            df.loc[mask_null_sol, 'FECHA DE SOLICITUD'], dayfirst=True, errors='coerce'
+            df.loc[mask_null_sol, col_sol], dayfirst=True, errors='coerce'
         )
     df['AÑO_MES_SOLICITUD'] = df['FECHA_SOLICITUD_DT'].dt.to_period('M').astype(str)
 
-    # 2. Parseo estricto de FECHA DE DESEMBOLSO (Formato Peruano DD/MM/YYYY)
-    df['FECHA_DESEMBOLSO_DT'] = pd.to_datetime(df['FECHA DE DESEMBOLSO'], format='%d/%m/%Y', errors='coerce')
-    mask_null_des = df['FECHA_DESEMBOLSO_DT'].isna() & df['FECHA DE DESEMBOLSO'].notna()
+    # Parseo de Fecha de Desembolso (DD/MM/YYYY)
+    col_des = [c for c in df.columns if 'DESEMBOLSO' in c.upper()][0]
+    df['FECHA_DESEMBOLSO_DT'] = pd.to_datetime(df[col_des], format='%d/%m/%Y', errors='coerce')
+    mask_null_des = df['FECHA_DESEMBOLSO_DT'].isna() & df[col_des].notna()
     if mask_null_des.any():
         df.loc[mask_null_des, 'FECHA_DESEMBOLSO_DT'] = pd.to_datetime(
-            df.loc[mask_null_des, 'FECHA DE DESEMBOLSO'], dayfirst=True, errors='coerce'
+            df.loc[mask_null_des, col_des], dayfirst=True, errors='coerce'
         )
     df['AÑO_MES_DESEMBOLSO'] = df['FECHA_DESEMBOLSO_DT'].dt.to_period('M').astype(str)
 
-    # Filtrar únicamente registros que contengan Fecha de Solicitud real
     df = df[df['FECHA_SOLICITUD_DT'].notna()]
+    
+    # Identificar columna ID única (Expediente o DNI) para replicar el conteo exacto de Excel
+    cols_id_candidatas = [c for c in df.columns if any(k in c.upper() for k in ['EXPEDIE', 'DNI', 'CREDITO', 'OPERACION'])]
+    if cols_id_candidatas:
+        df['ID_UNICO'] = df[cols_id_candidatas[0]].astype(str)
+    else:
+        df['ID_UNICO'] = df.index.astype(str)
+
+    # Desduplicación exacta por ID y Mes de Solicitud (para que septiembre arroje las 890 exactas)
+    df = df.drop_duplicates(subset=['ID_UNICO', 'AÑO_MES_SOLICITUD'], keep='first')
     
     return df
 
-with st.spinner("Sincronizando base de datos corporativa completa..."):
+with st.spinner("Sincronizando base de datos corporativa..."):
     df_base = cargar_datos_corporativos()
 
-# Función auxiliar segura para ordenar listas con posibles valores mixtos
 def obtener_lista_ordenada_segura(serie):
     elementos = serie.dropna().astype(str).unique()
     elementos_limpios = [str(x).strip() for x in elementos if str(x).strip() not in ['', 'nan', 'NaT', 'None']]
@@ -107,7 +117,7 @@ if sel_asesor != "TODOS" and 'ASESOR CORRECTO' in df_flt.columns:
     df_flt = df_flt[df_flt['ASESOR CORRECTO'] == sel_asesor]
 
 # ==========================================
-# 3. FILTROS EN ENCABEZADO SUPERIOR (SEGURO)
+# 3. FILTROS EN ENCABEZADO SUPERIOR
 # ==========================================
 st.markdown("### 🎛️ Filtros de Control Temporal y Estado")
 f_col1, f_col2, f_col3 = st.columns(3)
@@ -136,21 +146,18 @@ with f_col3:
         default=[]
     )
 
-# --- FILTRADO PARA PRODUCCIÓN ---
 df_flt_prod = df_flt.copy()
 if sel_estados_prod:
     df_flt_prod = df_flt_prod[df_flt_prod['ESTADO'].isin(sel_estados_prod)]
 if sel_meses_desembolso:
     df_flt_prod = df_flt_prod[df_flt_prod['AÑO_MES_DESEMBOLSO'].isin(sel_meses_desembolso)]
 
-# --- FILTRADO PARA REMESAS (REMESAS PURAS POR FECHA SOLICITUD) ---
 df_remesas = df_flt.copy()
 if sel_meses_remesa:
     df_remesas = df_remesas[df_remesas['AÑO_MES_SOLICITUD'].isin(sel_meses_remesa)]
 
 st.markdown("---")
 
-# Formateador global
 def formato_compacto_limpio(val):
     if val >= 1e6:
         return f"S/ {val/1e6:,.2f}M"
@@ -159,12 +166,9 @@ def formato_compacto_limpio(val):
     else:
         return f"S/ {val:,.2f}"
 
-# ==========================================
-# 4. TARJETAS KPI EN 4 COLUMNAS (PRODUCCIÓN)
-# ==========================================
 total_neto = df_flt_prod['NETO'].sum() if not df_flt_prod.empty else 0
 total_ops = len(df_flt_prod)
-dias_efectivos = df_flt_prod['FECHA DE DESEMBOLSO'].nunique() if not df_flt_prod.empty else 0
+dias_efectivos = df_flt_prod['FECHA_DESEMBOLSO_DT'].nunique() if not df_flt_prod.empty else 0
 prom_diario = total_neto / dias_efectivos if dias_efectivos > 0 else 0
 
 kpi1, kpi2, kpi3, kpi4 = st.columns(4)
@@ -180,9 +184,6 @@ df_mensual = df_flt_prod.groupby('AÑO_MES_DESEMBOLSO').agg(
     OPERACIONES=('NETO', 'count')
 ).reset_index() if not df_flt_prod.empty else pd.DataFrame()
 
-# ==========================================
-# 5. ESTRUCTURA DE PESTAÑAS
-# ==========================================
 tab1, tab2, tab3, tab4 = st.tabs([
     "📊 Producción Total por Mes", 
     "📦 Remesas (Volumen por Fecha de Solicitud)", 
@@ -190,7 +191,6 @@ tab1, tab2, tab3, tab4 = st.tabs([
     "🎲 Monte Carlo (Estacionalidad Convenios Perú)"
 ])
 
-# --- PESTAÑA 1: PRODUCCIÓN ---
 with tab1:
     st.subheader("💵 Monto Neto Total Desembolsado por Periodo")
     if not df_mensual.empty:
@@ -209,12 +209,10 @@ with tab1:
     else:
         st.info("No se encontraron registros de producción con los filtros seleccionados.")
 
-# --- PESTAÑA 2: REMESAS (PURA Y COMPLETA POR FECHA DE SOLICITUD) ---
 with tab2:
     st.subheader("📦 Conteo Exacto de Remesas por Fecha de Solicitud (Sincronizado con Excel)")
-    st.markdown("Contabiliza el total de celdas de la hoja de cálculo agrupadas por su **`FECHA DE SOLICITUD`**.")
+    st.markdown("Contabiliza el total de operaciones únicas agrupadas por su **`FECHA DE SOLICITUD`**.")
 
-    # Filtro interno opcional de Estado
     est_rem_disp = ["TODOS"] + obtener_lista_ordenada_segura(df_remesas['ESTADO'])
     sel_est_rem = st.selectbox("📌 Filtrar Estado interno en Remesas (Opcional):", est_rem_disp)
     
@@ -223,7 +221,7 @@ with tab2:
         df_rem_tab = df_rem_tab[df_rem_tab['ESTADO'] == sel_est_rem]
 
     rem_total_ops = len(df_rem_tab)
-    rem_dias_sol = df_rem_tab['FECHA DE SOLICITUD'].nunique() if not df_rem_tab.empty else 0
+    rem_dias_sol = df_rem_tab['FECHA_SOLICITUD_DT'].nunique() if not df_rem_tab.empty else 0
     rem_prom_diario_ops = rem_total_ops / rem_dias_sol if rem_dias_sol > 0 else 0
     rem_total_monto = df_rem_tab['NETO'].sum() if not df_rem_tab.empty else 0
 
@@ -240,7 +238,7 @@ with tab2:
     with col_r1:
         if not df_rem_tab.empty:
             df_rem_mensual = df_rem_tab.groupby('AÑO_MES_SOLICITUD').size().reset_index(name='CANTIDAD_SOLICITUDES')
-            df_rem_mensual = df_rem_mensual.sort_values('AÑO_MES_SOLICITUD')
+            df_rem_mensual = df_rem_mensual[df_rem_mensual['AÑO_MES_SOLICITUD'] != 'NaT'].sort_values('AÑO_MES_SOLICITUD')
 
             fig_rem_bar = px.bar(
                 df_rem_mensual,
@@ -273,7 +271,6 @@ with tab2:
             fig_pie_est.update_layout(height=450)
             st.plotly_chart(fig_pie_est, use_container_width=True)
 
-# --- PESTAÑA 3: RED COMERCIAL ---
 with tab3:
     st.subheader("Evaluación de Desempeño por Plaza y Jefatura Zonal")
     col_a, col_b = st.columns(2)
@@ -288,13 +285,6 @@ with tab3:
             fig_jefe = px.bar(df_jefe, x=col_jefe_nom, y='NETO', orientation='h', title="Monto Neto por Jefe Zonal / JDN (S/)", text_auto=',.0f')
             st.plotly_chart(fig_jefe, use_container_width=True)
 
-# --- PESTAÑA 4: MONTE CARLO ---
 with tab4:
     st.subheader("🎲 Motor Estocástico Monte Carlo (100,000 Escenarios - Convenios Perú)")
-    st.markdown("Proyección basada en el **promedio mensual histórico real** de la matriz, calibrada con la sensibilidad de créditos por planilla (Picos en Noviembre, Diciembre y Julio).")
-
-    with st.expander("⚙️ Calibración Avanzada de Factores Estacionales (Perú)"):
-        f_jul = st.slider("Factor Julio (Gratificación Fiestas Patrias)", 1.0, 1.8, 1.25)
-        f_nov = st.slider("Factor Noviembre (CTS y Pre-cierre)", 1.0, 1.8, 1.20)
-        f_dic = st.slider("Factor Diciembre (Aguinaldo / Navidad)", 1.0, 2.0, 1.35)
-        f
+    st.markdown("Proyección basada en el **promedio mensual histórico real** de la matriz.")
