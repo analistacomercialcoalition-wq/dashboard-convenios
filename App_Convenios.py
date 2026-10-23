@@ -282,6 +282,7 @@ with f_col1:
     )
 
 with f_col2:
+    # Opciones de meses extraídas de TODO df_base para que siempre aparezcan completos
     meses_des_disp = obtener_opciones_limpias(df_base, 'AÑO_MES_DESEMBOLSO')
     sel_meses_desembolso = st.multiselect(
         "🗓️ Meses Desembolso (Filtro Producción)", 
@@ -465,6 +466,7 @@ with tab4:
         0.0
     )
 
+    # Ordenamiento estricto solicitado: 1° % Cumplimiento Ops, 2° % Cumplimiento Monto (ambos descendenetes)
     df_reporte = df_reporte.sort_values(by=['% Cumplimiento Ops', '% Cumplimiento Monto'], ascending=[False, False]).reset_index(drop=True)
 
     df_reporte_final = df_reporte[[
@@ -475,11 +477,18 @@ with tab4:
         'SUPERVISOR': 'Supervisor', 'ESTADO_SUP': 'Estado', 'PLAZA': 'Plaza / Zona',
         'JEFE ZONAL': 'Jefe Zonal', 'TERRITORIAL': 'Territorial',
         'META DE OPERACIONES': 'Meta de Operaciones', 'OPERACIONES_DESEMBOLSA': 'Ops Desembolsadas',
-        'META DESEMBOLSO': 'Meta Desembolso (S/)', 'MONTO_DESEMBOLSADO': 'Monto Desembolsado (S/)'
+        '% Cumplimiento Ops': '% Cumplimiento Ops',
+        'META DESEMBOLSO': 'Meta Desembolso (S/)', 'MONTO_DESEMBOLSADO': 'Monto Desembolsado (S/)',
+        '% Cumplimiento Monto': '% Cumplimiento Monto'
     })
 
     if not df_reporte_final.empty:
-        st.dataframe(df_reporte_final, use_container_width=True)
+        # Formatear porcentajes como enteros sin decimales para una vista limpia y gerencial
+        df_reporte_display = df_reporte_final.copy()
+        df_reporte_display['% Cumplimiento Ops'] = df_reporte_display['% Cumplimiento Ops'].round(0).astype(int).astype(str) + '%'
+        df_reporte_display['% Cumplimiento Monto'] = df_reporte_display['% Cumplimiento Monto'].round(0).astype(int).astype(str) + '%'
+        
+        st.dataframe(df_reporte_display, use_container_width=True)
     else:
         st.info("No hay datos para el reporte de supervisión con los filtros actuales.")
 
