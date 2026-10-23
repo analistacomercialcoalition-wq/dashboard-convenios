@@ -113,7 +113,8 @@ def cargar_datos_corporativos():
     df = df.drop_duplicates(subset=['ID_UNICO', 'AÑO_MES_SOLICITUD'], keep='first')
 
     try:
-        sheet_url_dotacion = f"https://docs.google.com/spreadsheets/d/{base_id}/gviz/tq?tqx=out:csv&sheet=Dotación"
+        nombre_pestana_codificado = urllib.parse.quote("Dotación")
+        sheet_url_dotacion = f"https://docs.google.com/spreadsheets/d/{base_id}/gviz/tq?tqx=out:csv&sheet={nombre_pestana_codificado}"
         df_dotacion = pd.read_csv(sheet_url_dotacion, dtype=str)
         df_dotacion.columns = df_dotacion.columns.astype(str).str.strip()
         
@@ -123,7 +124,7 @@ def cargar_datos_corporativos():
             col_dni = cols_dni[0]
             df_dotacion[col_dni] = df_dotacion[col_dni].fillna('').astype(str).str.strip()
             df_dotacion[col_dni] = df_dotacion[col_dni].apply(lambda x: x.zfill(8) if x and x.isdigit() and len(x) < 8 else x)
-    except Exception:
+    except Exception as e:
         df_dotacion = pd.DataFrame(columns=['ASESOR CORRECTO', 'DNI', 'ESTADO', 'SUPERVISOR', 'JEFE ZONAL', 'PLAZA'])
 
     datos_metas = [
