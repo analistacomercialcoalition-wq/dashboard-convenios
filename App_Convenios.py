@@ -34,14 +34,14 @@ if 'autenticado' not in st.session_state:
 if 'usuario_correo' not in st.session_state:
     st.session_state.usuario_correo = ""
 
-# Credenciales actualizadas con el nuevo usuario
+# Credenciales con la contraseña actualizada para Cecilia López
 CREDENCIALES_USUARIOS = {
     "luigi.socca@coalition.com.pe": {
         "password": "45775003",
         "territorial": "TODAS"
     },
     "cecilia.lopez@coalition.com.pe": {
-        "password": "12345678",
+        "password": "123456789",
         "territorial": "CECILIA LOPEZ"
     }
 }
