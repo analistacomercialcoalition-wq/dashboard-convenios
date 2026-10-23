@@ -361,7 +361,6 @@ with tab1:
         df_diario_prod['MILLONES'] = df_diario_prod['NETO'] / 1e6
         df_diario_prod['FMT_M'] = df_diario_prod['MILLONES'].apply(lambda x: f"{x:,.1f}" if x > 0 else "0")
 
-        # Generación de meta ejecutiva por día (2.9M objetivo, 1.3M en sábados)
         metas_meta_l = []
         for d in pd.to_datetime(df_diario_prod['FECHA_DESEMBOLSO_DT']):
             is_sabado = (d.dayofweek == 5)
@@ -370,7 +369,6 @@ with tab1:
 
         fig_prod_dual = go.Figure()
 
-        # Curva de Meta Coalition (Superior - Estilo Referencia)
         fig_prod_dual.add_trace(go.Scatter(
             x=df_diario_prod['FECHA_STR'],
             y=df_diario_prod['META_MILLONES'],
@@ -384,7 +382,6 @@ with tab1:
             fillcolor='rgba(15, 23, 42, 0.08)'
         ))
 
-        # Curva de Avance Coalition (Real en Millones de Soles)
         fig_prod_dual.add_trace(go.Scatter(
             x=df_diario_prod['FECHA_STR'],
             y=df_diario_prod['MILLONES'],
@@ -556,7 +553,6 @@ with tab3:
 with tab4:
     st.subheader("🎯 Reporte de Venta, Remesas y Metas por Línea de Supervisión")
     
-    # 1. Producción para supervisores (con los filtros de producción de la app)
     if not df_flt_prod.empty and 'SUPERVISOR' in df_flt_prod.columns:
         df_prod_sup = df_flt_prod.groupby('SUPERVISOR').agg(
             OPERACIONES_DESEMBOLSA=('NETO', 'count'),
@@ -565,7 +561,6 @@ with tab4:
     else:
         df_prod_sup = pd.DataFrame(columns=['SUPERVISOR', 'OPERACIONES_DESEMBOLSA', 'MONTO_DESEMBOLSADO'])
 
-    # 2. Remesas ingresadas por supervisor (filtradas por el mes de remesa seleccionado)
     if not df_remesas.empty and 'SUPERVISOR' in df_remesas.columns:
         df_rem_sup = df_remesas.groupby('SUPERVISOR').size().reset_index(name='REMESAS_INGRESADAS')
     else:
@@ -602,6 +597,30 @@ with tab4:
     )
 
     df_reporte = df_reporte.sort_values(by=['% Cumplimiento Ops', '% Cumplimiento Monto'], ascending=[False, False]).reset_index(drop=True)
+
+    # GRÁFICA DE BARRAS ADICIONAL: Monto Desembolsado por Supervisor con Línea de Promedio
+    if not df_reporte.empty:
+        promedio_desembolsado = df_reporte['MONTO_DESEMBOLSADO'].mean()
+        fig_bar_sup_monto = px.bar(
+            df_reporte.sort_values('MONTO_DESEMBOLSADO', ascending=True),
+            x='MONTO_DESEMBOLSADO',
+            y='SUPERVISOR',
+            orientation='h',
+            title="Monto Desembolsado por Supervisor (S/) vs Promedio General",
+            text_auto=',.2s',
+            color_discrete_sequence=['#2563EB']
+        )
+        fig_bar_sup_monto.add_vline(
+            x=promedio_desembolsado,
+            line_dash="dash",
+            line_color="#EF4444",
+            line_width=2.5,
+            annotation_text=f"Promedio: S/ {promedio_desembolsado:,.2f}",
+            annotation_position="top right"
+        )
+        fig_bar_sup_monto.update_layout(height=450, template="plotly_white", xaxis_title="Monto Desembolsado (S/)", yaxis_title="Supervisor")
+        st.plotly_chart(fig_bar_sup_monto, use_container_width=True)
+        st.markdown("---")
 
     df_reporte_final = df_reporte[[
         'SUPERVISOR', 'ESTADO_SUP', 'PLAZA', 'JEFE ZONAL', 'TERRITORIAL',
