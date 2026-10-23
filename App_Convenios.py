@@ -498,7 +498,7 @@ with tab3:
             fig_jefe.update_layout(template="plotly_white")
             st.plotly_chart(fig_jefe, use_container_width=True)
 
-# --- PESTAÑA 4: REPORTE DE VENTA POR SUPERVISOR CON FILTRO TEMPORAL Y SEMÁFORO ---
+# --- PESTAÑA 4: REPORTE DE VENTA POR SUPERVISOR CON FORMATO CORREGIDO ---
 with tab4:
     st.subheader("🎯 Reporte de Venta y Metas por Línea de Supervisión")
     st.markdown("Consolidado dinámico sincronizado con el **Filtro de Meses de Desembolso**, Estado y Estructura Comercial.")
@@ -572,25 +572,26 @@ with tab4:
             return 'background-color: #DCFCE7; color: #166534; font-weight: bold;'  # Verde
 
     if not df_reporte_final.empty:
+        # FORMATOS AJUSTADOS: Porcentajes sin decimales y Monto Desembolsado con S/
         styled_df = df_reporte_final.style.map(
             aplicar_estilo_semaforo, 
             subset=['% Cumplimiento Ops', '% Cumplimiento Monto']
         ).format({
             'Meta de Operaciones': '{:,.0f}',
             'Operaciones Desembolsadas': '{:,.0f}',
-            '% Cumplimiento Ops': '{:,.2f}%',
+            '% Cumplimiento Ops': '{:,.0f}%',
             'Meta Desembolso (S/)': 'S/ {:,.2f}',
-            'Monto Desembolso (S/)': 'S/ {:,.2f}',
-            '% Cumplimiento Monto': '{:,.2f}%'
+            'Monto Desembolsado (S/)': 'S/ {:,.2f}',
+            '% Cumplimiento Monto': '{:,.0f}%'
         })
 
         st.dataframe(styled_df, use_container_width=True)
 
         st.markdown("#### 📌 Leyenda de Semáforo de Cumplimiento:")
         l_col1, l_col2, l_col3 = st.columns(3)
-        l_col1.markdown("🔴 **Rojo (Bajo):** Menor a 80.00%")
-        l_col2.markdown("🟡 **Amarillo (Medio):** Entre 80.00% y 99.99%")
-        l_col3.markdown("🟢 **Verde (Meta Alcanzada):** 100.00% o superior")
+        l_col1.markdown("🔴 **Rojo (Bajo):** Menor a 80%")
+        l_col2.markdown("🟡 **Amarillo (Medio):** Entre 80% y 99%")
+        l_col3.markdown("🟢 **Verde (Meta Alcanzada):** 100% o superior")
     else:
         st.info("No se encontraron registros de metas que coincidan con los filtros comerciales seleccionados.")
 
