@@ -34,7 +34,6 @@ if 'autenticado' not in st.session_state:
 if 'usuario_correo' not in st.session_state:
     st.session_state.usuario_correo = ""
 
-# Credenciales con la contraseña actualizada para Cecilia López
 CREDENCIALES_USUARIOS = {
     "luigi.socca@coalition.com.pe": {
         "password": "45775003",
@@ -112,6 +111,20 @@ def cargar_datos_corporativos():
     cols_id = [c for c in df.columns if any(k in c.upper() for k in ['EXPEDIE', 'DNI', 'CREDITO', 'OPERACION'])]
     df['ID_UNICO'] = df[cols_id[0]].astype(str).str.strip() if cols_id else df.index.astype(str)
     df = df.drop_duplicates(subset=['ID_UNICO', 'AÑO_MES_SOLICITUD'], keep='first')
+
+    try:
+        sheet_url_dotacion = f"https://docs.google.com/spreadsheets/d/{base_id}/gviz/tq?tqx=out:csv&sheet=Dotación"
+        df_dotacion = pd.read_csv(sheet_url_dotacion, dtype=str)
+        df_dotacion.columns = df_dotacion.columns.astype(str).str.strip()
+        
+        # Formatear la columna DNI para que siempre tenga 8 dígitos con 0 a la izquierda
+        cols_dni = [c for c in df_dotacion.columns if 'DNI' in c.upper()]
+        if cols_dni:
+            col_dni = cols_dni[0]
+            df_dotacion[col_dni] = df_dotacion[col_dni].fillna('').astype(str).str.strip()
+            df_dotacion[col_dni] = df_dotacion[col_dni].apply(lambda x: x.zfill(8) if x and x.isdigit() and len(x) < 8 else x)
+    except Exception:
+        df_dotacion = pd.DataFrame(columns=['ASESOR CORRECTO', 'DNI', 'ESTADO', 'SUPERVISOR', 'JEFE ZONAL', 'PLAZA'])
 
     datos_metas = [
         ["PAOLA PEREZ", "ACTIVO", "LIMA", "FLAVIA LAURA", "CECILIA LOPEZ", 28, 1290000],
@@ -194,8 +207,6 @@ def cargar_datos_corporativos():
     )
     for c in ['SUPERVISOR', 'ESTADO_SUP', 'PLAZA', 'JEFE ZONAL', 'TERRITORIAL']:
         df_metas_oficial[c] = df_metas_oficial[c].astype(str).str.strip().str.upper()
-
-    df_dotacion = pd.DataFrame(columns=['ASESOR CORRECTO', 'DNI', 'ESTADO', 'SUPERVISOR', 'JEFE ZONAL', 'PLAZA'])
 
     return df, df_metas_oficial, df_dotacion
 
@@ -348,12 +359,13 @@ df_mensual = df_flt_prod.groupby('AÑO_MES_DESEMBOLSO').agg(
     OPERACIONES=('NETO', 'count')
 ).reset_index() if not df_flt_prod.empty else pd.DataFrame()
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "📊 Producción Total por Mes", 
     "📦 Remesas (Volumen por Fecha de Solicitud)", 
     "🏆 Red Comercial & Ranking", 
     "🎯 Reporte de Venta por Supervisor",
-    "🎲 Monte Carlo (Estacionalidad Perú)"
+    "🎲 Monte Carlo (Estacionalidad Perú)",
+    "👥 Dotación"
 ])
 
 with tab1:
@@ -733,3 +745,10 @@ with tab5:
     fig_mc.data[2].text = df_res_mc['P90_FMT']
     fig_mc.update_layout(height=500, yaxis_title="Monto Proyectado (S/)", template="plotly_white")
     st.plotly_chart(fig_mc, use_container_width=True)
+
+with tab6:
+    st.subheader("👥 Dotación de Asesores (Pestaña Dotación)")
+    if df_dotacion is not None and not df_dotacion.empty:
+        st.dataframe(df_dotacion, use_container_width=True)
+    else:
+        st.info("No se encontraron registros en la pestaña 'Dotación' del Google Sheets.")
