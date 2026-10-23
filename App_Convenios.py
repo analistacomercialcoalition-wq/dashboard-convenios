@@ -72,7 +72,6 @@ if not st.session_state.autenticado:
 def cargar_datos_corporativos():
     base_id = "1IBvyIN5H1jYrwEAOD9E5nTCpaBLqxD109HMKCW0Ezt8"
     
-    # 1. Matriz Principal
     sheet_url_hoja1 = f"https://docs.google.com/spreadsheets/d/{base_id}/gviz/tq?tqx=out:csv&sheet=Hoja%201"
     df = pd.read_csv(sheet_url_hoja1, dtype=str)
     df.columns = df.columns.astype(str).str.strip()
@@ -87,12 +86,10 @@ def cargar_datos_corporativos():
         if col in df.columns:
             df[col] = df[col].fillna('').astype(str).str.strip().str.upper()
 
-    # Parseo Ultra Robusto de Fechas de Solicitud y Meses
     col_sol = [c for c in df.columns if 'SOLICITUD' in c.upper()][0]
     df['FECHA_SOLICITUD_DT'] = pd.to_datetime(df[col_sol], dayfirst=True, errors='coerce')
     df['AÑO_MES_SOLICITUD'] = df['FECHA_SOLICITUD_DT'].dt.strftime('%Y-%m').fillna('')
 
-    # Parseo Ultra Robusto de Fechas de Desembolso y Meses
     col_des = [c for c in df.columns if 'DESEMBOLSO' in c.upper()][0]
     df['FECHA_DESEMBOLSO_DT'] = pd.to_datetime(df[col_des], dayfirst=True, errors='coerce')
     df['AÑO_MES_DESEMBOLSO'] = df['FECHA_DESEMBOLSO_DT'].dt.strftime('%Y-%m').fillna('')
@@ -103,7 +100,6 @@ def cargar_datos_corporativos():
     df['ID_UNICO'] = df[cols_id[0]].astype(str).str.strip() if cols_id else df.index.astype(str)
     df = df.drop_duplicates(subset=['ID_UNICO', 'AÑO_MES_SOLICITUD'], keep='first')
 
-    # Metas oficiales
     datos_metas = [
         ["PAOLA PEREZ", "ACTIVO", "LIMA", "FLAVIA LAURA", "CECILIA LOPEZ", 28, 1290000],
         ["FRANK SANTAMARIA", "ACTIVO", "JAEN", "JOSE VALDIVIEZO", "CECILIA LOPEZ", 20, 950000],
@@ -207,7 +203,7 @@ st.markdown("---")
 
 def obtener_opciones_limpias(df_in, col_name):
     if df_in is not None and isinstance(df_in, pd.DataFrame) and col_name in df_in.columns:
-        elementos = sorted([x for x in df_in[col_name].dropna().unique() if str(x).strip() not in ['', 'NAN', 'NAT', 'NONE', 'NaT', 'nan', 'NaT']])
+        elementos = sorted([x for x in df_in[col_name].dropna().unique() if str(x).strip() not in ['', 'NAN', 'NAT', 'NONE', 'NaT', 'nan']])
         return elementos
     return []
 
@@ -312,6 +308,8 @@ if sel_meses_remesa:
 st.markdown("---")
 
 def formato_compacto_limpio(val):
+    if pd.isna(val):
+        return "S/ 0.00"
     if val >= 1e6:
         return f"S/ {val/1e6:,.2f}M"
     elif val >= 1e3:
@@ -452,50 +450,37 @@ with tab4:
 
     df_reporte = pd.merge(df_metas_flt, df_prod_sup, on='SUPERVISOR', how='left')
     df_reporte['OPERACIONES_DESEMBOLSA'] = df_reporte['OPERACIONES_DESEMBOLSA'].fillna(0).astype(int)
-    df_reporte['MONTO_DESEMBOLSADO'] = df_reporte['MONTO_DESEMBOLSADO'].fillna(0)
+    df_reporte['MONTO_DESEMBOLSADO'] = df_reporte['MONTO_DESEMBOLSADO'].fillna(0.0)
 
-    df_reporte['CUMPLIMIENTO_OPS'] = np.where(
+    df_reporte['% Cumplimiento Ops'] = np.where(
         df_reporte['META DE OPERACIONES'] > 0,
         (df_reporte['OPERACIONES_DESEMBOLSA'] / df_reporte['META DE OPERACIONES']) * 100,
         0.0
     )
-    df_reporte['CUMPLIMIENTO_MONTO'] = np.where(
+    df_reporte['% Cumplimiento Monto'] = np.where(
         df_reporte['META DESEMBOLSO'] > 0,
         (df_reporte['MONTO_DESEMBOLSADO'] / df_reporte['META DESEMBOLSO']) * 100,
         0.0
     )
 
-    df_reporte = df_reporte.sort_values(by=['CUMPLIMIENTO_OPS', 'CUMPLIMIENTO_MONTO'], ascending=[False, False]).reset_index(drop=True)
+    df_reporte = df_reporte.sort_values(by=['% Cumplimiento Ops', '% Cumplimiento Monto'], ascending=[False, False]).reset_index(drop=True)
 
-    cols_ordenadas = [
+    df_reporte_final = df_reporte[[
         'SUPERVISOR', 'ESTADO_SUP', 'PLAZA', 'JEFE ZONAL', 'TERRITORIAL',
-        'META DE OPERACIONES', 'OPERACIONES_DESEMBOLSA', 'CUMPLIMIENTO_OPS',
-        'META DESEMBOLSO', 'MONTO_DESEMBOLSADO', 'CUMPLIMIENTO_MONTO'
-    ]
-    df_reporte_final = df_reporte[cols_ordenadas].rename(columns={
+        'META DE OPERACIONES', 'OPERACIONES_DESEMBOLSA', '% Cumplimiento Ops',
+        'META DESEMBOLSO', 'MONTO_DESEMBOLSADO', '% Cumplimiento Monto'
+    ]].rename(columns={
         'SUPERVISOR': 'Supervisor', 'ESTADO_SUP': 'Estado', 'PLAZA': 'Plaza / Zona',
         'JEFE ZONAL': 'Jefe Zonal', 'TERRITORIAL': 'Territorial',
         'META DE OPERACIONES': 'Meta de Operaciones', 'OPERACIONES_DESEMBOLSA': 'Ops Desembolsadas',
-        '% Cumplimiento Ops': '% Cumplimiento Ops', 'META DESEMBOLSO': 'Meta Desembolso (S/)',
-        'Monto Desembolsado (S/)': 'Monto Desembolsado (S/)', '% Cumplimiento Monto': '% Cumplimiento Monto'
+        'META DESEMBOLSO': 'Meta Desembolso (S/)', 'MONTO_DESEMBOLSADO': 'Monto Desembolsado (S/)'
     })
 
-    def aplicar_estilo_semaforo(val):
-        if val < 80.0:
-            return 'background-color: #FEE2E2; color: #991B1B; font-weight: bold;'
-        elif val < 100.0:
-            return 'background-color: #FEF3C7; color: #92400E; font-weight: bold;'
-        else:
-            return 'background-color: #DCFCE7; color: #166534; font-weight: bold;'
-
+    # Mostrar tabla limpia estándar sin estilos complejos de Pandas para garantizar 0 errores
     if not df_reporte_final.empty:
-        styled_df = df_reporte_final.style.map(
-            aplicar_estilo_semaforo, subset=['% Cumplimiento Ops', '% Cumplimiento Monto']
-        ).format({
-            'Meta de Operaciones': '{:,.0f}', 'Ops Desembolsadas': '{:,.0f}', '% Cumplimiento Ops': '{:,.0f}%',
-            'Meta Desembolso (S/)': formato_compacto_limpio, 'Monto Desembolsado (S/)': formato_compacto_limpio, '% Cumplimiento Monto': '{:,.0f}%'
-        })
-        st.dataframe(styled_df, use_container_width=True)
+        st.dataframe(df_reporte_final, use_container_width=True)
+    else:
+        st.info("No hay datos para el reporte de supervisión con los filtros actuales.")
 
 with tab5:
     st.subheader("🎲 Motor Estocástico Monte Carlo (100,000 Escenarios - Convenios Perú)")
