@@ -807,7 +807,7 @@ with tab6:
         if cols_asesor and sel_asesor != "TODOS":
             df_dot_flt = df_dot_flt[df_dot_flt[cols_asesor[0]] == sel_asesor]
 
-        # 4. Detección automática de la fecha/mes de ingreso del promotor desde la dotación
+        # 4. Detectar la columna de Fecha de Ingreso en Dotación
         cols_fecha_ingreso = [c for c in df_dot_flt.columns if any(k in c.upper() for k in ['INGRES', 'FECHA', 'ALTA', 'INICIO'])]
         
         # 5. Cruzar con Hoja 1 por DNI para calcular montos netos por mes (Enero a Octubre)
@@ -834,11 +834,11 @@ with tab6:
                 if 'DNI_HOJA1' in df_dot_flt.columns:
                     df_dot_flt = df_dot_flt.drop(columns=['DNI_HOJA1'])
                 
-                # Procesar mes de ingreso y vaciar meses anteriores al ingreso
                 mes_nombre_a_num = {'ENERO': 1, 'FEBRERO': 2, 'MARZO': 3, 'ABRIL': 4, 'MAYO': 5, 'JUNIO': 6, 'JULIO': 7, 'AGOSTO': 8, 'SETIEMBRE': 9, 'SEPTIEMBRE': 9, 'OCTUBRE': 10, 'NOVIEMBRE': 11, 'DICIEMBRE': 12}
                 
+                # Iterar por cada promotor para aplicar el vaciado de meses previos al ingreso
                 for idx, row in df_dot_flt.iterrows():
-                    mes_ingreso_num = 1  # Por defecto desde Enero si no se encuentra columna de fecha
+                    mes_ingreso_num = 1
                     if cols_fecha_ingreso:
                         val_fecha_str = str(row[cols_fecha_ingreso[0]]).strip()
                         dt_ing = pd.to_datetime(val_fecha_str, errors='coerce', format='mixed', dayfirst=True)
@@ -850,24 +850,21 @@ with tab6:
                                     mes_ingreso_num = num_m
                                     break
                     
-                    # Si no hay fecha en dotación, inferir el primer mes en que tuvo producción o venta real
                     if not cols_fecha_ingreso or mes_ingreso_num == 1:
                         for idx_m, m in enumerate(meses_cols, start=1):
                             if m in row and pd.notna(row[m]) and row[m] > 0:
                                 mes_ingreso_num = idx_m
                                 break
 
-                    # Asignar celdas vacías a los meses anteriores a la fecha de ingreso
                     valores_validos_promedio = []
                     for idx_m, m in enumerate(meses_cols, start=1):
                         if idx_m < mes_ingreso_num:
-                            df_dot_flt.at[idx, m] = ""  # Vacío para que no afecte ni muestre cero erróneo
+                            df_dot_flt.at[idx, m] = ""
                         else:
                             val_prod = row.get(m, 0.0)
                             val_prod = 0.0 if pd.isna(val_prod) else float(val_prod)
                             valores_validos_promedio.append(val_prod)
                     
-                    # Calcular el promedio únicamente considerando los meses activos desde su fecha de ingreso
                     if valores_validos_promedio:
                         df_dot_flt.at[idx, 'Promedio'] = sum(valores_validos_promedio) / len(valores_validos_promedio)
                     else:
@@ -887,7 +884,6 @@ with tab6:
 
             cols_a_formatear = [c for c in ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Setiembre', 'Octubre', 'Promedio'] if c in df_dot_flt.columns]
 
-            # Aplicar formato compacto solo a los valores numéricos válidos (dejando los vacíos intactos)
             for col_m in cols_a_formatear:
                 df_dot_flt[col_m] = df_dot_flt[col_m].apply(lambda x: formato_compacto_limpio(x) if x != "" else "")
 
