@@ -119,7 +119,7 @@ if not st.session_state.autenticado:
     st.stop()
 
 # ==========================================
-# CARGA Y LIMPIEZA ROBUSTA DE DATOS (MATRIZ, METAS Y DOTACIÓN)
+# CARGA Y LIMPIEZA BLINDADA DE DATOS
 # ==========================================
 @st.cache_data(ttl=300)
 def cargar_datos_corporativos():
@@ -252,7 +252,7 @@ def cargar_datos_corporativos():
     for c in ['SUPERVISOR', 'ESTADO_SUP', 'PLAZA', 'JEFE ZONAL', 'TERRITORIAL']:
         df_metas_oficial[c] = df_metas_oficial[c].str.strip().str.upper()
 
-    # 2. Carga Multicapa de la Pestaña DOTACIÓN (Resuelve Error de lectura de Google Sheets)
+    # 3. Carga Blindada de la Pestaña DOTACIÓN
     posibles_nombres_dotacion = ["DOTACION", "DOTACIÓN", "Dotacion", "Dotación"]
     df_dotacion = pd.DataFrame()
 
@@ -270,6 +270,9 @@ def cargar_datos_corporativos():
         df_dotacion.columns = df_dotacion.columns.str.strip()
         for col in df_dotacion.columns:
             df_dotacion[col] = df_dotacion[col].fillna('').astype(str).str.strip().str.upper()
+    else:
+        # Fallback seguro por si no encuentra la hoja exacta para evitar errores
+        df_dotacion = pd.DataFrame(columns=['ASESOR', 'SUPERVISOR', 'PLAZA', 'JEFE ZONAL', 'TERRITORIAL'])
 
     return df, df_metas_oficial, df_dotacion
 
@@ -365,7 +368,7 @@ if sel_asesor != "TODOS" and 'ASESOR CORRECTO' in df_flt_sidebar.columns:
 df_flt = df_flt_sidebar.copy()
 
 # ==========================================
-# FILTROS SUPERIORES TEMPORALES (SOLUCIÓN A ERROR 1: CATÁLOGO COMPLETO SIEMPRE DISPONIBLE)
+# FILTROS SUPERIORES TEMPORALES
 # ==========================================
 st.markdown("### 🎛️ Controles Temporales y Estado Operativo")
 f_col1, f_col2, f_col3 = st.columns(3)
@@ -379,7 +382,6 @@ with f_col1:
     )
 
 with f_col2:
-    # Carga SIEMPRE todas las opciones de meses de desembolso de la base completa
     meses_des_disp = obtener_opciones_limpias(df_base, 'AÑO_MES_DESEMBOLSO')
     sel_meses_desembolso = st.multiselect(
         "🗓️ Meses Desembolso (Filtro Producción)", 
@@ -388,7 +390,6 @@ with f_col2:
     )
 
 with f_col3:
-    # Carga SIEMPRE todas las opciones de meses de solicitud de remesas de la base completa
     meses_sol_disp = obtener_opciones_limpias(df_base, 'AÑO_MES_SOLICITUD')
     sel_meses_remesa = st.multiselect(
         "📥 Filtrar Meses de Remesa (Fecha Solicitud)", 
@@ -437,7 +438,7 @@ df_mensual = df_flt_prod.groupby('AÑO_MES_DESEMBOLSO').agg(
 ).reset_index() if not df_flt_prod.empty else pd.DataFrame()
 
 # ==========================================
-# ESTRUCTURA DE 6 PESTAÑAS DEL DASHBOARD (INCLUYE DOTACIÓN Y REMESAS CORREGIDAS)
+# ESTRUCTURA DE 6 PESTAÑAS DEL DASHBOARD
 # ==========================================
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "📊 Producción Total por Mes", 
@@ -606,7 +607,7 @@ with tab4:
         'META DE OPERACIONES': 'Meta de Operaciones',
         'OPERACIONES_DESEMBOLSA': 'Ops Desembolsadas',
         'CUMPLIMIENTO_OPS': '% Cumplimiento Ops',
-        'META DESEMBOLSO': 'Meta DesembolSO (S/)',
+        'META DESEMBOLSO': 'Meta Desembolso (S/)',
         'MONTO_DESEMBOLSADO': 'Monto Desembolsado (S/)',
         'CUMPLIMIENTO_MONTO': '% Cumplimiento Monto'
     })
@@ -627,7 +628,7 @@ with tab4:
             'Meta de Operaciones': '{:,.0f}',
             'Ops Desembolsadas': '{:,.0f}',
             '% Cumplimiento Ops': '{:,.0f}%',
-            'Meta DesembolSO (S/)': formato_compacto_limpio,
+            'Meta Desembolso (S/)': formato_compacto_limpio,
             'Monto Desembolsado (S/)': formato_compacto_limpio,
             '% Cumplimiento Monto': '{:,.0f}%'
         })
@@ -642,7 +643,7 @@ with tab4:
     else:
         st.info("No se encontraron registros de metas que coincidan con los filtros comerciales seleccionados.")
 
-# --- PESTAÑA 5: DOTACIÓN Y PRODUCCIÓN MENSUAL (SOLUCIÓN A ERROR 2: CARGA COMPLETA Y DINÁMICA) ---
+# --- PESTAÑA 5: DOTACIÓN Y PRODUCCIÓN MENSUAL (BLINDADA) ---
 with tab5:
     st.subheader("👥 Dotación Comercial y Producción Mensual por Asesor (S/ Netos)")
     st.markdown("Matriz de dotación con consolidación de **Monto Neto Desembolsado** de **Enero a Octubre** y cálculo de **Promedio Mensual**.")
@@ -650,8 +651,7 @@ with tab5:
     if not df_dotacion.empty:
         df_dot_flt = df_dotacion.copy()
 
-        # Filtrado inteligente por estructura comercial
-        cols_dot = {c.upper(): c for c in df_dot_flt.columns}
+        cols_dot = {str(c).upper(): c for c in df_dot_flt.columns}
         col_dot_t = next((cols_dot[k] for k in cols_dot if 'TERRITORIAL' in k), None)
         col_dot_p = next((cols_dot[k] for k in cols_dot if 'PLAZA' in k or 'ZONA' in k), None)
         col_dot_j = next((cols_dot[k] for k in cols_dot if 'JEFE' in k), None)
@@ -669,7 +669,6 @@ with tab5:
         if sel_asesor != "TODOS" and col_dot_a:
             df_dot_flt = df_dot_flt[df_dot_flt[col_dot_a] == sel_asesor]
 
-        # Producción real desembolsada agrupada por Asesor Correcto de Enero (1) a Octubre (10)
         df_desem_matriz = df_base[
             (df_base['ESTADO'] == 'DESEMBOLSADO') & 
             (df_base['MES_DESEMBOLSO_NUM'] >= 1) & 
@@ -712,13 +711,11 @@ with tab5:
         for c in cols_meses_lista:
             df_dot_unida[c] = df_dot_unida[c].fillna(0.0)
 
-        # Cálculo de Promedio Mensual
         df_dot_unida['Promedio Mensual (S/)'] = df_dot_unida[cols_meses_lista].mean(axis=1)
 
         if 'ASESOR CORRECTO' in df_dot_unida.columns and col_asesor_key != 'ASESOR CORRECTO':
             df_dot_unida = df_dot_unida.drop(columns=['ASESOR CORRECTO'])
 
-        # Ordenar por Promedio Mensual
         df_dot_unida = df_dot_unida.sort_values('Promedio Mensual (S/)', ascending=False).reset_index(drop=True)
 
         formatos_dict = {c: formato_compacto_limpio for c in cols_meses_lista}
@@ -727,7 +724,7 @@ with tab5:
         styled_dotacion = df_dot_unida.style.format(formatos_dict)
         st.dataframe(styled_dotacion, use_container_width=True)
     else:
-        st.error("⚠️ No se pudo vincular la pestaña de Dotación. Por favor asegúrate de que en el Google Sheet la pestaña se llame exactamente 'DOTACION' o 'DOTACIÓN' y tenga acceso público.")
+        st.warning("⚠️ La pestaña de Dotación no tiene datos o no se pudo leer correctamente. Verifique que la hoja en Google Sheets tenga el nombre 'DOTACION'.")
 
 # --- PESTAÑA 6: MONTE CARLO ---
 with tab6:
