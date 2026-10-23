@@ -376,6 +376,7 @@ with tab1:
             name='META COALITION',
             text=[f"{m:,.1f}" for m in df_diario_prod['META_MILLONES']],
             textposition='top center',
+            textfont=dict(size=13, color='#0F172A', family='Arial Black'),
             line=dict(color='#0F172A', width=3.5, shape='spline'),
             marker=dict(size=8, color='#0F172A'),
             fill='tozeroy',
@@ -389,6 +390,7 @@ with tab1:
             name='AVANCE COALITION',
             text=df_diario_prod['FMT_M'],
             textposition='top center',
+            textfont=dict(size=13, color='#475569', family='Arial Black'),
             line=dict(color='#94A3B8', width=3.5, dash='dash', shape='spline'),
             marker=dict(size=8, color='#94A3B8')
         ))
@@ -472,6 +474,7 @@ with tab2:
                 name='Remesas Diarias',
                 text=df_diario_rem['CANTIDAD'],
                 textposition='top center',
+                textfont=dict(size=13, color='#16A34A', family='Arial Black'),
                 line=dict(color='#16A34A', width=3.5, shape='spline'),
                 marker=dict(size=9, color='#16A34A', line=dict(color='#FFFFFF', width=1.5)),
                 fill='tozeroy',
@@ -598,27 +601,47 @@ with tab4:
 
     df_reporte = df_reporte.sort_values(by=['% Cumplimiento Ops', '% Cumplimiento Monto'], ascending=[False, False]).reset_index(drop=True)
 
-    # GRÁFICA DE BARRAS ADICIONAL: Monto Desembolsado por Supervisor con Línea de Promedio
+    # GRÁFICA DE BARRAS DE TOP SUPERVISORES CON NÚMEROS GRANDES Y VISTOSOS
     if not df_reporte.empty:
         promedio_desembolsado = df_reporte['MONTO_DESEMBOLSADO'].mean()
-        fig_bar_sup_monto = px.bar(
-            df_reporte.sort_values('MONTO_DESEMBOLSADO', ascending=True),
-            x='MONTO_DESEMBOLSADO',
-            y='SUPERVISOR',
+        
+        # Top 12 mejores supervisores
+        df_top_sup = df_reporte.sort_values('MONTO_DESEMBOLSADO', ascending=False).head(12).copy()
+        df_top_sup['MONTO_MILLONES'] = df_top_sup['MONTO_DESEMBOLSADO'] / 1e6
+        df_top_sup['FMT_TEXTO'] = df_top_sup['MONTO_MILLONES'].apply(lambda x: f"S/ {x:,.2f}M" if x >= 1 else f"S/ {x*1000:,.0f}k")
+        df_top_sup = df_top_sup.sort_values('MONTO_DESEMBOLSADO', ascending=True)
+
+        fig_bar_sup_monto = go.Figure()
+
+        fig_bar_sup_monto.add_trace(go.Bar(
+            x=df_top_sup['MONTO_DESEMBOLSADO'],
+            y=df_top_sup['SUPERVISOR'],
             orientation='h',
-            title="Monto Desembolsado por Supervisor (S/) vs Promedio General",
-            text_auto=',.2s',
-            color_discrete_sequence=['#2563EB']
-        )
+            text=df_top_sup['FMT_TEXTO'],
+            textposition='auto',
+            textfont=dict(size=14, color='white', family='Arial Black'),
+            marker=dict(color='#2563EB')
+        ))
+
         fig_bar_sup_monto.add_vline(
             x=promedio_desembolsado,
             line_dash="dash",
             line_color="#EF4444",
-            line_width=2.5,
+            line_width=3,
             annotation_text=f"Promedio: S/ {promedio_desembolsado:,.2f}",
-            annotation_position="top right"
+            annotation_position="top right",
+            annotation=dict(font_size=12, font_color="#EF4444", font_family="Arial Black", bgcolor="#FEE2E2", borderpad=4)
         )
-        fig_bar_sup_monto.update_layout(height=450, template="plotly_white", xaxis_title="Monto Desembolsado (S/)", yaxis_title="Supervisor")
+
+        fig_bar_sup_monto.update_layout(
+            title="Top Mejores Supervisores por Monto Desembolsado (S/) vs Promedio General",
+            xaxis_title="Monto Desembolsado (S/)",
+            yaxis_title="Supervisor",
+            height=480,
+            template="plotly_white",
+            uniformtext_minsize=12,
+            uniformtext_mode='hide'
+        )
         st.plotly_chart(fig_bar_sup_monto, use_container_width=True)
         st.markdown("---")
 
