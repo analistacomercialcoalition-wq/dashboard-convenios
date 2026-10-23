@@ -498,10 +498,10 @@ with tab3:
             fig_jefe.update_layout(template="plotly_white")
             st.plotly_chart(fig_jefe, use_container_width=True)
 
-# --- PESTAÑA 4: REPORTE DE VENTA POR SUPERVISOR CON FORMATO CORREGIDO ---
+# --- PESTAÑA 4: REPORTE DE VENTA ORDENADO Y NUMEROS COMPACTOS ---
 with tab4:
     st.subheader("🎯 Reporte de Venta y Metas por Línea de Supervisión")
-    st.markdown("Consolidado dinámico sincronizado con el **Filtro de Meses de Desembolso**, Estado y Estructura Comercial.")
+    st.markdown("Consolidado ordenado jerárquicamente por **% Cumplimiento Ops** (1º) y **% Cumplimiento Monto** (2º) en formato compacto gerencial.")
 
     # 1. Utilizar df_flt_prod (YA FILTRADO POR MESES DE DESEMBOLSO Y ESTADO SELECCIONADO)
     if not df_flt_prod.empty and 'SUPERVISOR' in df_flt_prod.columns:
@@ -525,7 +525,7 @@ with tab4:
     if sel_sup != "TODOS":
         df_metas_flt = df_metas_flt[df_metas_flt['SUPERVISOR'] == sel_sup]
 
-    # 3. Cruzar la tabla de metas con el avance real desembolsado dentro del rango de meses seleccionado
+    # 3. Cruzar la tabla de metas con el avance real desembolsado
     df_reporte = pd.merge(df_metas_flt, df_prod_sup, on='SUPERVISOR', how='left')
     df_reporte['OPERACIONES_DESEMBOLSA'] = df_reporte['OPERACIONES_DESEMBOLSA'].fillna(0).astype(int)
     df_reporte['MONTO_DESEMBOLSADO'] = df_reporte['MONTO_DESEMBOLSADO'].fillna(0)
@@ -542,7 +542,13 @@ with tab4:
         0.0
     )
 
-    # 5. Reordenar y formatear la tabla final
+    # 5. ORDENAMIENTO EXPLICITO SOLICITADO: 1º CUMPLIMIENTO_OPS, 2º CUMPLIMIENTO_MONTO (AMBOS DESCENDENTES)
+    df_reporte = df_reporte.sort_values(
+        by=['CUMPLIMIENTO_OPS', 'CUMPLIMIENTO_MONTO'], 
+        ascending=[False, False]
+    ).reset_index(drop=True)
+
+    # 6. Reordenar y renombrar la tabla final
     cols_ordenadas = [
         'SUPERVISOR', 'ESTADO_SUP', 'PLAZA', 'JEFE ZONAL', 'TERRITORIAL',
         'META DE OPERACIONES', 'OPERACIONES_DESEMBOLSA', 'CUMPLIMIENTO_OPS',
@@ -555,7 +561,7 @@ with tab4:
         'JEFE ZONAL': 'Jefe Zonal',
         'TERRITORIAL': 'Territorial',
         'META DE OPERACIONES': 'Meta de Operaciones',
-        'OPERACIONES_DESEMBOLSA': 'Operaciones Desembolsadas',
+        'OPERACIONES_DESEMBOLSA': 'Ops Desembolsadas',
         'CUMPLIMIENTO_OPS': '% Cumplimiento Ops',
         'META DESEMBOLSO': 'Meta Desembolso (S/)',
         'MONTO_DESEMBOLSADO': 'Monto Desembolsado (S/)',
@@ -572,22 +578,22 @@ with tab4:
             return 'background-color: #DCFCE7; color: #166534; font-weight: bold;'  # Verde
 
     if not df_reporte_final.empty:
-        # FORMATOS AJUSTADOS: Porcentajes sin decimales y Monto Desembolsado con S/
+        # FORMATOS AJUSTADOS A NÚMEROS COMPACTOS Y ENTEROS EN %
         styled_df = df_reporte_final.style.map(
             aplicar_estilo_semaforo, 
             subset=['% Cumplimiento Ops', '% Cumplimiento Monto']
         ).format({
             'Meta de Operaciones': '{:,.0f}',
-            'Operaciones Desembolsadas': '{:,.0f}',
+            'Ops Desembolsadas': '{:,.0f}',
             '% Cumplimiento Ops': '{:,.0f}%',
-            'Meta Desembolso (S/)': 'S/ {:,.2f}',
-            'Monto Desembolsado (S/)': 'S/ {:,.2f}',
+            'Meta Desembolso (S/)': formato_compacto_limpio,
+            'Monto Desembolsado (S/)': formato_compacto_limpio,
             '% Cumplimiento Monto': '{:,.0f}%'
         })
 
         st.dataframe(styled_df, use_container_width=True)
 
-        st.markdown("#### 📌 Leyenda de Semáforo de Cumplimiento:")
+        st.markdown("#### 📌 Leyenda de Semáforo y Ranking:")
         l_col1, l_col2, l_col3 = st.columns(3)
         l_col1.markdown("🔴 **Rojo (Bajo):** Menor a 80%")
         l_col2.markdown("🟡 **Amarillo (Medio):** Entre 80% y 99%")
