@@ -820,7 +820,6 @@ with tab6:
             df_pivot = df_pivot[meses_cols].copy()
             df_pivot['Promedio'] = df_pivot[meses_cols].mean(axis=1)
 
-            # Cuartil 1 = Mayor rendimiento (Top), Cuartil 4 = Bajo
             if len(df_pivot) >= 4:
                 df_pivot['Cuartil'] = pd.qcut(df_pivot['Promedio'].rank(method='first', ascending=False), 4, labels=['Cuartil 1 (Top)', 'Cuartil 2', 'Cuartil 3', 'Cuartil 4 (Bajo)'])
             else:
@@ -844,13 +843,12 @@ with tab6:
         if not df_dot_flt.empty:
             st.markdown(f"**Total Personal Activo Filtrado:** `{len(df_dot_flt)}` colaboradores")
             
-            # Ordenar de MAYOR a MENOR según el Promedio
+            # Ordenar de MAYOR a MENOR por Promedio
             if 'Promedio' in df_dot_flt.columns:
                 df_dot_flt = df_dot_flt.sort_values(by='Promedio', ascending=False).reset_index(drop=True)
 
             cols_a_formatear = [c for c in ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Setiembre', 'Octubre', 'Promedio'] if c in df_dot_flt.columns]
 
-            # Función para pintar en rojo suave cuando sea S/ 0.00
             def resaltar_ceros(val):
                 if isinstance(val, (int, float)) and val == 0:
                     return 'background-color: #FEE2E2; color: #991B1B; font-weight: bold;'
@@ -861,8 +859,30 @@ with tab6:
             ).format(
                 {col: formato_compacto_limpio for col in cols_a_formatear}
             )
-            
-            st.dataframe(styled_dot, use_container_width=True)
+
+            # Configuraciones de columna para fijar la primera columna de Asesor y achicar los meses
+            col_cfg = {}
+            col_asesor_nom = [c for c in df_dot_flt.columns if 'ASESOR' in c.upper()]
+            if col_asesor_nom:
+                col_cfg[col_asesor_nom[0]] = st.column_config.TextColumn(
+                    label=col_asesor_nom[0],
+                    width="medium",
+                    pinned=True  # Columna fija (Sticky)
+                )
+
+            for col_m in cols_a_formatear:
+                col_cfg[col_m] = st.column_config.Column(
+                    label=col_m,
+                    width="small"  # Columnas achicadas/compactas
+                )
+
+            if 'Cuartil' in df_dot_flt.columns:
+                col_cfg['Cuartil'] = st.column_config.TextColumn(
+                    label='Cuartil',
+                    width="small"
+                )
+
+            st.dataframe(styled_dot, column_config=col_cfg, use_container_width=True)
         else:
             st.info("No se encontraron colaboradores en estado ACTIVO que coincidan con la combinación de filtros seleccionados.")
     else:
