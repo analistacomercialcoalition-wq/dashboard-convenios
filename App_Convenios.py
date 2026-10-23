@@ -87,23 +87,15 @@ def cargar_datos_corporativos():
         if col in df.columns:
             df[col] = df[col].fillna('').astype(str).str.strip().str.upper()
 
+    # Parseo Ultra Robusto de Fechas de Solicitud y Meses
     col_sol = [c for c in df.columns if 'SOLICITUD' in c.upper()][0]
-    df['FECHA_SOLICITUD_DT'] = pd.to_datetime(df[col_sol], format='%d/%m/%Y', errors='coerce')
-    mask_null_sol = df['FECHA_SOLICITUD_DT'].isna() & (df[col_sol] != '')
-    if mask_null_sol.any():
-        df.loc[mask_null_sol, 'FECHA_SOLICITUD_DT'] = pd.to_datetime(
-            df.loc[mask_null_sol, col_sol], dayfirst=True, errors='coerce'
-        )
-    df['AÑO_MES_SOLICITUD'] = df['FECHA_SOLICITUD_DT'].dt.to_period('M').astype(str)
+    df['FECHA_SOLICITUD_DT'] = pd.to_datetime(df[col_sol], dayfirst=True, errors='coerce')
+    df['AÑO_MES_SOLICITUD'] = df['FECHA_SOLICITUD_DT'].dt.strftime('%Y-%m').fillna('')
 
+    # Parseo Ultra Robusto de Fechas de Desembolso y Meses
     col_des = [c for c in df.columns if 'DESEMBOLSO' in c.upper()][0]
-    df['FECHA_DESEMBOLSO_DT'] = pd.to_datetime(df[col_des], format='%d/%m/%Y', errors='coerce')
-    mask_null_des = df['FECHA_DESEMBOLSO_DT'].isna() & (df[col_des] != '')
-    if mask_null_des.any():
-        df.loc[mask_null_des, 'FECHA_DESEMBOLSO_DT'] = pd.to_datetime(
-            df.loc[mask_null_des, col_des], dayfirst=True, errors='coerce'
-        )
-    df['AÑO_MES_DESEMBOLSO'] = df['FECHA_DESEMBOLSO_DT'].dt.to_period('M').astype(str)
+    df['FECHA_DESEMBOLSO_DT'] = pd.to_datetime(df[col_des], dayfirst=True, errors='coerce')
+    df['AÑO_MES_DESEMBOLSO'] = df['FECHA_DESEMBOLSO_DT'].dt.strftime('%Y-%m').fillna('')
     df['MES_DESEMBOLSO_NUM'] = df['FECHA_DESEMBOLSO_DT'].dt.month
 
     df = df[df['FECHA_SOLICITUD_DT'].notna()]
@@ -194,7 +186,6 @@ def cargar_datos_corporativos():
     for c in ['SUPERVISOR', 'ESTADO_SUP', 'PLAZA', 'JEFE ZONAL', 'TERRITORIAL']:
         df_metas_oficial[c] = df_metas_oficial[c].astype(str).str.strip().str.upper()
 
-    # DOTACIÓN ELIMINADA DE LA CARGA WEB (Se define segura vacía)
     df_dotacion = pd.DataFrame(columns=['ASESOR CORRECTO', 'DNI', 'ESTADO', 'SUPERVISOR', 'JEFE ZONAL', 'PLAZA'])
 
     return df, df_metas_oficial, df_dotacion
@@ -216,7 +207,7 @@ st.markdown("---")
 
 def obtener_opciones_limpias(df_in, col_name):
     if df_in is not None and isinstance(df_in, pd.DataFrame) and col_name in df_in.columns:
-        elementos = sorted([x for x in df_in[col_name].dropna().unique() if str(x).strip() not in ['', 'NAN', 'NAT', 'NONE', 'NaT', 'nan']])
+        elementos = sorted([x for x in df_in[col_name].dropna().unique() if str(x).strip() not in ['', 'NAN', 'NAT', 'NONE', 'NaT', 'nan', 'NaT']])
         return elementos
     return []
 
@@ -346,7 +337,6 @@ df_mensual = df_flt_prod.groupby('AÑO_MES_DESEMBOLSO').agg(
     OPERACIONES=('NETO', 'count')
 ).reset_index() if not df_flt_prod.empty else pd.DataFrame()
 
-# 5 Pestañas activas (sin riesgo de dotación)
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📊 Producción Total por Mes", 
     "📦 Remesas (Volumen por Fecha de Solicitud)", 
@@ -396,7 +386,7 @@ with tab2:
     with col_r1:
         if not df_rem_tab.empty:
             df_rem_mensual = df_rem_tab.groupby('AÑO_MES_SOLICITUD').size().reset_index(name='CANTIDAD_SOLICITUDES')
-            df_rem_mensual = df_rem_mensual[df_rem_mensual['AÑO_MES_SOLICITUD'] != 'NaT'].sort_values('AÑO_MES_SOLICITUD')
+            df_rem_mensual = df_rem_mensual[df_rem_mensual['AÑO_MES_SOLICITUD'] != ''].sort_values('AÑO_MES_SOLICITUD')
 
             fig_rem_bar = px.bar(
                 df_rem_mensual, x='AÑO_MES_SOLICITUD', y='CANTIDAD_SOLICITUDES', text='CANTIDAD_SOLICITUDES',
