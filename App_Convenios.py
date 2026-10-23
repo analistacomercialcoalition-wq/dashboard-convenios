@@ -86,7 +86,6 @@ def cargar_datos_corporativos():
         if col in df.columns:
             df[col] = df[col].fillna('').astype(str).str.strip().str.upper()
 
-    # Parseo Ultra Robusto con format='mixed' para evitar fallos en fechas
     col_sol = [c for c in df.columns if 'SOLICITUD' in c.upper()][0]
     dt_sol = pd.to_datetime(df[col_sol], errors='coerce', format='mixed', dayfirst=True)
     df['FECHA_SOLICITUD_DT'] = dt_sol
@@ -511,4 +510,23 @@ with tab5:
         p90_l.append(np.percentile(totales, 90))
 
     df_res_mc = pd.DataFrame({
-        'Mes': meses_nombres, 'Pesimista (P10)': p1
+        'Mes': meses_nombres, 
+        'Pesimista (P10)': p10_l, 
+        'Base / Esperado (P50)': p50_l, 
+        'Optimista (P90)': p90_l
+    })
+    df_res_mc['P10_FMT'] = df_res_mc['Pesimista (P10)'].apply(formato_compacto_limpio)
+    df_res_mc['P50_FMT'] = df_res_mc['Base / Esperado (P50)'].apply(formato_compacto_limpio)
+    df_res_mc['P90_FMT'] = df_res_mc['Optimista (P90)'].apply(formato_compacto_limpio)
+
+    fig_mc = px.line(
+        df_res_mc, x='Mes', y=['Pesimista (P10)', 'Base / Esperado (P50)', 'Optimista (P90)'],
+        title="Proyección Anual de Bandas Estacionales Perú - Convenios (S/)", markers=True,
+        color_discrete_map={'Pesimista (P10)': '#EF4444', 'Base / Esperado (P50)': '#2563EB', 'Optimista (P90)': '#10B981'}
+    )
+    fig_mc.update_traces(mode='lines+markers+text', textposition='top center')
+    fig_mc.data[0].text = df_res_mc['P10_FMT']
+    fig_mc.data[1].text = df_res_mc['P50_FMT']
+    fig_mc.data[2].text = df_res_mc['P90_FMT']
+    fig_mc.update_layout(height=500, yaxis_title="Monto Proyectado (S/)", template="plotly_white")
+    st.plotly_chart(fig_mc, use_container_width=True)
