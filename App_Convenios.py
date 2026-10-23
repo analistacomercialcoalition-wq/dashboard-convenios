@@ -91,7 +91,7 @@ with col_tit:
 st.markdown("---")
 
 # ==========================================
-# 1. CARGA Y LIMPIEZA DE DATOS (MATRIZ PRINCIPAL)
+# 1. CARGA Y LIMPIEZA DE DATOS (MATRIZ PRINCIPAL Y METAS OFICIALES)
 # ==========================================
 @st.cache_data(ttl=600)
 def cargar_datos_corporativos():
@@ -139,10 +139,93 @@ def cargar_datos_corporativos():
     df['ID_UNICO'] = df[cols_id[0]].astype(str).str.strip() if cols_id else df.index.astype(str)
     df = df.drop_duplicates(subset=['ID_UNICO', 'AÑO_MES_SOLICITUD'], keep='first')
 
-    return df
+    # TABLA OFICIAL DE METAS POR SUPERVISOR PROVISTA POR LUIGI
+    datos_metas = [
+        ["PAOLA PEREZ", "ACTIVO", "LIMA", "FLAVIA LAURA", "CECILIA LOPEZ", 28, 1290000],
+        ["FRANK SANTAMARIA", "ACTIVO", "JAEN", "JOSE VALDIVIEZO", "CECILIA LOPEZ", 20, 950000],
+        ["ROCIO CASTRO", "ACTIVO", "LIMA", "FLAVIA LAURA", "CECILIA LOPEZ", 28, 1290000],
+        ["MIGUEL SANDOVAL", "ACTIVO", "PIURA", "ANA ROLANDO", "ANA ROLANDO", 28, 1290000],
+        ["CENTHY RIOJA", "ACTIVO", "CHICLAYO", "JARUMY CHUYEN", "ANA ROLANDO", 28, 1290000],
+        ["CAROL ALVAREZ", "ACTIVO", "PUNO", "KARINA CHOQUECAHUA", "CECILIA LOPEZ", 28, 1290000],
+        ["FRANK HUANCARUNA", "ACTIVO", "CHICLAYO", "JARUMY CHUYEN", "ANA ROLANDO", 28, 1290000],
+        ["ANDY MEDINA", "ACTIVO", "PIURA", "ANA ROLANDO", "ANA ROLANDO", 28, 1290000],
+        ["VIRGILIA ARMAS", "ACTIVO", "TARAPOTO", "PEDRO PAREDES", "ANA ROLANDO", 28, 1290000],
+        ["GUIDO MUCHO", "ACTIVO", "TACNA", "LUIS RAMOS", "CECILIA LOPEZ", 28, 1290000],
+        ["ROSMERY REYES", "ACTIVO", "CHICLAYO", "JARUMY CHUYEN", "ANA ROLANDO", 20, 950000],
+        ["PERCY RIVAS", "ACTIVO", "LIMA", "LUIS MIGUEL FLORES", "CECILIA LOPEZ", 20, 950000],
+        ["FRANKLIN GUEVARA", "ACTIVO", "BAGUA", "JOSE VALDIVIEZO", "CECILIA LOPEZ", 25, 1150000],
+        ["LLOYSI FLORES", "ACTIVO", "TARAPOTO", "ANA ROLANDO", "ANA ROLANDO", 28, 1290000],
+        ["LUIS MANCHEGO", "ACTIVO", "LIMA", "KARINA CHOQUECAHUA", "CECILIA LOPEZ", 28, 1290000],
+        ["LIZET COCHACHIN", "ACTIVO", "HUANCAYO", "RONALD VIDAL", "ENRIQUE CIUDAD", 28, 1290000],
+        ["MICHAEL CHAVEZ", "ACTIVO", "TACNA", "KARINA CHOQUECAHUA", "CECILIA LOPEZ", 28, 1290000],
+        ["ROGER MEJIA", "ACTIVO", "TRUJILLO", "GIOVANNY SILVA", "ANA ROLANDO", 28, 1290000],
+        ["LOURDES SANCHEZ", "ACTIVO", "BARRANCA", "PEDRO PAREDES", "ANA ROLANDO", 28, 1290000],
+        ["ALEXANDRA NARREA", "ACTIVO", "LIMA", "LUIS RAMOS", "CECILIA LOPEZ", 28, 1290000],
+        ["MANUEL PUENTE", "ACTIVO", "LIMA", "LUIS RAMOS", "CECILIA LOPEZ", 28, 1290000],
+        ["JAIME CRUZ", "ACTIVO", "MOYOBAMBA", "PEDRO PAREDES", "ANA ROLANDO", 28, 1290000],
+        ["CLARY QUIROZ", "ACTIVO", "CHICLAYO", "JARUMY CHUYEN", "ANA ROLANDO", 28, 1290000],
+        ["RENATTO CORONEL", "ACTIVO", "HUARAZ", "ANA ROLANDO", "ANA ROLANDO", 20, 950000],
+        ["GIOVANNA MORALES", "ACTIVO", "TARAPOTO", "ANA ROLANDO", "ANA ROLANDO", 28, 1290000],
+        ["GOLBERT BICERRA", "ACTIVO", "IQUITOS", "ANA ROLANDO", "ANA ROLANDO", 28, 1290000],
+        ["ELMER BAILON", "ACTIVO", "JUANJUI", "PEDRO PAREDES", "ANA ROLANDO", 28, 1290000],
+        ["BENSON WONG", "ACTIVO", "CHIMBOTE", "GIOVANNY SILVA", "ANA ROLANDO", 18, 750000],
+        ["FERNANDO YUI", "INACTIVO", "CHIMBOTE", "GIOVANNY SILVA", "ANA ROLANDO", 18, 750000],
+        ["LUIS RIOS", "ACTIVO", "TRUJILLO", "GIOVANNY SILVA", "ANA ROLANDO", 20, 950000],
+        ["BORIS CORIMAYA", "ACTIVO", "TRUJILLO", "GIOVANNY SILVA", "ANA ROLANDO", 28, 1290000],
+        ["ELIDA CARRASCO", "ACTIVO", "TARAPOTO", "JOSE VALDIVIEZO", "CECILIA LOPEZ", 20, 950000],
+        ["MARCOS TANTARICO", "ACTIVO", "TARAPOTO", "JOSE VALDIVIEZO", "CECILIA LOPEZ", 25, 1150000],
+        ["GABRIEL VARGAS", "ACTIVO", "CUSCO", "KARINA CHOQUECAHUA", "CECILIA LOPEZ", 20, 950000],
+        ["VERONICA CUSICUNA", "ACTIVO", "CUSCO", "KARINA CHOQUECAHUA", "CECILIA LOPEZ", 28, 1290000],
+        ["PATRICIA TORRES", "INACTIVO", "ANDAHUAYLAS", "KARINA CHOQUECAHUA", "CECILIA LOPEZ", 20, 950000],
+        ["FLAVIA LAURA", "ACTIVO", "LIMA", "FLAVIA LAURA", "CECILIA LOPEZ", 28, 1290000],
+        ["DAISY NAVARRO", "ACTIVO", "AREQUIPA", "CECILIA LOPEZ", "CECILIA LOPEZ", 28, 1290000],
+        ["JIMMY VERA", "ACTIVO", "AREQUIPA", "CECILIA LOPEZ", "CECILIA LOPEZ", 28, 1290000],
+        ["SHIRLEY SALAZAR", "ACTIVO", "LIMA", "LUIS RAMOS", "CECILIA LOPEZ", 20, 950000],
+        ["JOSE AULLA", "ACTIVO", "ICA", "LUIS RAMOS", "CECILIA LOPEZ", 28, 1290000],
+        ["ELVYN BETETA", "ACTIVO", "LIMA", "LUIS RAMOS", "CECILIA LOPEZ", 28, 1290000],
+        ["RODRIGO LEON", "INACTIVO", "LIMA", "LUIS RAMOS", "CECILIA LOPEZ", 18, 750000],
+        ["JHOEL TITO", "ACTIVO", "LIMA", "LUIS MIGUEL FLORES", "CECILIA LOPEZ", 28, 1290000],
+        ["MICAELA BUENO", "ACTIVO", "LIMA", "LUIS MIGUEL FLORES", "CECILIA LOPEZ", 28, 1290000],
+        ["ROCIO TRUJILLO", "ACTIVO", "LIMA", "LUIS MIGUEL FLORES", "CECILIA LOPEZ", 18, 750000],
+        ["ROCIO RAMOS", "ACTIVO", "HUANCAYO", "RONALD VIDAL", "ENRIQUE CIUDAD", 20, 950000],
+        ["PAUL ROMERO", "ACTIVO", "HUANCAYO", "RONALD VIDAL", "ENRIQUE CIUDAD", 28, 1290000],
+        ["FIORELLA MORALES", "INACTIVO", "HUANCAYO", "RONALD VIDAL", "ENRIQUE CIUDAD", 18, 750000],
+        ["DEISY MANRIQUE", "ACTIVO", "HUANCAYO", "RONALD VIDAL", "ENRIQUE CIUDAD", 20, 950000],
+        ["JESUS FARFAN", "ACTIVO", "LIMA", "ANTONELLA REYES", "ENRIQUE CIUDAD", 20, 950000],
+        ["YRENE CAMPOS", "ACTIVO", "ICA", "ANTONELLA REYES", "ENRIQUE CIUDAD", 20, 950000],
+        ["ONELLA CAYO", "INACTIVO", "PUNO", "ANTONELLA REYES", "ENRIQUE CIUDAD", 18, 750000],
+        ["BETZY CRUZ", "ACTIVO", "ABANCAY", "ANTONELLA REYES", "ENRIQUE CIUDAD", 18, 750000],
+        ["NATALY CANCHARI", "ACTIVO", "AYACUCHO", "ANTONELLA REYES", "ENRIQUE CIUDAD", 18, 750000],
+        ["MELISA VILLENA", "ACTIVO", "HUANCAYO", "ENRIQUE CIUDAD", "ENRIQUE CIUDAD", 20, 950000],
+        ["SANDRO SENADO", "INACTIVO", "HUANCAYO", "LUIS ROJAS", "ENRIQUE CIUDAD", 18, 750000],
+        ["JOSE SULCA", "ACTIVO", "HUANCAYO", "ENRIQUE CIUDAD", "ENRIQUE CIUDAD", 18, 750000],
+        ["LISTAYLER SANCHEZ", "ACTIVO", "HUANUCO", "LUIS ROJAS", "ENRIQUE CIUDAD", 20, 950000],
+        ["CARLOS ZUÑIGA", "ACTIVO", "CHICLAYO", "ANTONELLA REYES", "ENRIQUE CIUDAD", 18, 750000],
+        ["BENIGNO BUSTINZA", "ACTIVO", "LIMA", "FLAVIA LAURA", "CECILIA LOPEZ", 18, 750000],
+        ["GLADYS FLORES", "ACTIVO", "LIMA", "KARINA CHOQUECAHUA", "CECILIA LOPEZ", 18, 750000],
+        ["LESLY COTRINA", "INACTIVO", "CHICLAYO", "JOSE VALDIVIEZO", "CECILIA LOPEZ", 28, 1290000],
+        ["MIGUEL HINOJOSA", "INACTIVO", "PIURA", "JOSE VALDIVIEZO", "CECILIA LOPEZ", 28, 1290000],
+        ["ISAIAS ESCOBEDO", "INACTIVO", "HUACHO", "PEDRO PAREDES", "ANA ROLANDO", 28, 1290000],
+        ["EMELYN DELGADO", "ACTIVO", "AREQUIPA", "CECILIA LOPEZ", "CECILIA LOPEZ", 18, 750000],
+        ["VICTOR CHUÑE", "ACTIVO", "LIMA", "CECILIA LOPEZ", "CECILIA LOPEZ", 18, 750000],
+        ["VERONICA PAUCAR", "ACTIVO", "LIMA", "LUIS MIGUEL FLORES", "CECILIA LOPEZ", 18, 750000],
+        ["GIANINA SACHUN", "ACTIVO", "CHIMBOTE", "GIOVANNY SILVA", "ANA ROLANDO", 18, 750000],
+        ["YANETH HUAMAN", "ACTIVO", "LIMA", "ANTONELLA REYES", "ENRIQUE CIUDAD", 18, 750000],
+        ["RAQUEL ROJAS", "ACTIVO", "HUANCAYO", "RONALD VIDAL", "ENRIQUE CIUDAD", 18, 750000],
+        ["JINES SEDANO", "ACTIVO", "HUANCAYO", "LUIS ROJAS", "ENRIQUE CIUDAD", 18, 750000]
+    ]
 
-with st.spinner("Sincronizando matriz corporativa Coalition..."):
-    df_base = cargar_datos_corporativos()
+    df_metas_oficial = pd.DataFrame(
+        datos_metas, 
+        columns=['SUPERVISOR', 'ESTADO_SUP', 'PLAZA', 'JEFE ZONAL', 'TERRITORIAL', 'META DE OPERACIONES', 'META DESEMBOLSO']
+    )
+    for c in ['SUPERVISOR', 'ESTADO_SUP', 'PLAZA', 'JEFE ZONAL', 'TERRITORIAL']:
+        df_metas_oficial[c] = df_metas_oficial[c].str.strip().str.upper()
+
+    return df, df_metas_oficial
+
+with st.spinner("Sincronizando matriz corporativa Coalition y Metas Oficiales..."):
+    df_base, df_metas_oficial = cargar_datos_corporativos()
 
 def obtener_opciones_limpias(df_in, col_name):
     if col_name in df_in.columns:
@@ -306,12 +389,13 @@ df_mensual = df_flt_prod.groupby('AÑO_MES_DESEMBOLSO').agg(
 ).reset_index() if not df_flt_prod.empty else pd.DataFrame()
 
 # ==========================================
-# 4. ESTRUCTURA DE PESTAÑAS DEL DASHBOARD (4 PESTAÑAS)
+# 4. ESTRUCTURA DE PESTAÑAS DEL DASHBOARD
 # ==========================================
-tab1, tab2, tab3, tab4 = st.tabs([
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📊 Producción Total por Mes", 
     "📦 Remesas (Volumen por Fecha de Solicitud)", 
     "🏆 Red Comercial & Ranking", 
+    "🎯 Reporte de Venta por Supervisor",
     "🎲 Monte Carlo (Estacionalidad Perú)"
 ])
 
@@ -414,8 +498,106 @@ with tab3:
             fig_jefe.update_layout(template="plotly_white")
             st.plotly_chart(fig_jefe, use_container_width=True)
 
-# --- PESTAÑA 4: MONTE CARLO ---
+# --- PESTAÑA 4: REPORTE DE VENTA POR SUPERVISOR CON METAS Y SEMÁFORO ---
 with tab4:
+    st.subheader("🎯 Reporte de Venta y Metas por Línea de Supervisión")
+    st.markdown("Consolidado dinámico sincronizado con las metas oficiales por **Supervisor, Estado, Plaza/Zona, Jefe Zonal y Territorial** con medición en estado **`DESEMBOLSADO`**.")
+
+    # 1. Obtener producción real desembolsada por supervisor desde el filtro actual
+    df_desem = df_flt[df_flt['ESTADO'] == 'DESEMBOLSADO']
+    
+    if 'SUPERVISOR' in df_desem.columns:
+        df_prod_sup = df_desem.groupby('SUPERVISOR').agg(
+            OPERACIONES_DESEMBOLSA=('NETO', 'count'),
+            MONTO_DESEMBOLSADO=('NETO', 'sum')
+        ).reset_index()
+    else:
+        df_prod_sup = pd.DataFrame(columns=['SUPERVISOR', 'OPERACIONES_DESEMBOLSA', 'MONTO_DESEMBOLSADO'])
+
+    # 2. Aplicar los filtros de la barra lateral sobre la tabla de metas oficial
+    df_metas_flt = df_metas_oficial.copy()
+    if sel_territorial != "TODOS":
+        df_metas_flt = df_metas_flt[df_metas_flt['TERRITORIAL'] == sel_territorial]
+    if sel_zona != "TODAS":
+        df_metas_flt = df_metas_flt[df_metas_flt['PLAZA'] == sel_zona]
+    if sel_plaza != "TODAS":
+        df_metas_flt = df_metas_flt[df_metas_flt['PLAZA'] == sel_plaza]
+    if sel_jefe != "TODOS":
+        df_metas_flt = df_metas_flt[df_metas_flt['JEFE ZONAL'] == sel_jefe]
+    if sel_sup != "TODOS":
+        df_metas_flt = df_metas_flt[df_metas_flt['SUPERVISOR'] == sel_sup]
+
+    # 3. Cruzar la tabla de metas con el avance real desembolsado
+    df_reporte = pd.merge(df_metas_flt, df_prod_sup, on='SUPERVISOR', how='left')
+    df_reporte['OPERACIONES_DESEMBOLSA'] = df_reporte['OPERACIONES_DESEMBOLSA'].fillna(0).astype(int)
+    df_reporte['MONTO_DESEMBOLSADO'] = df_reporte['MONTO_DESEMBOLSADO'].fillna(0)
+
+    # 4. Calcular % de cumplimiento
+    df_reporte['CUMPLIMIENTO_OPS'] = np.where(
+        df_reporte['META DE OPERACIONES'] > 0,
+        (df_reporte['OPERACIONES_DESEMBOLSA'] / df_reporte['META DE OPERACIONES']) * 100,
+        0.0
+    )
+    df_reporte['CUMPLIMIENTO_MONTO'] = np.where(
+        df_reporte['META DESEMBOLSO'] > 0,
+        (df_reporte['MONTO_DESEMBOLSADO'] / df_reporte['META DESEMBOLSO']) * 100,
+        0.0
+    )
+
+    # 5. Reordenar y formatear la tabla final
+    cols_ordenadas = [
+        'SUPERVISOR', 'ESTADO_SUP', 'PLAZA', 'JEFE ZONAL', 'TERRITORIAL',
+        'META DE OPERACIONES', 'OPERACIONES_DESEMBOLSA', 'CUMPLIMIENTO_OPS',
+        'META DESEMBOLSO', 'MONTO_DESEMBOLSADO', 'CUMPLIMIENTO_MONTO'
+    ]
+    df_reporte_final = df_reporte[cols_ordenadas].rename(columns={
+        'SUPERVISOR': 'Supervisor',
+        'ESTADO_SUP': 'Estado',
+        'PLAZA': 'Plaza / Zona',
+        'JEFE ZONAL': 'Jefe Zonal',
+        'TERRITORIAL': 'Territorial',
+        'META DE OPERACIONES': 'Meta de Operaciones',
+        'OPERACIONES_DESEMBOLSA': 'Operaciones Desembolsadas',
+        'CUMPLIMIENTO_OPS': '% Cumplimiento Ops',
+        'META DESEMBOLSO': 'Meta Desembolso (S/)',
+        'MONTO_DESEMBOLSADO': 'Monto Desembolsado (S/)',
+        'CUMPLIMIENTO_MONTO': '% Cumplimiento Monto'
+    })
+
+    # Función para colorear el semáforo según el porcentaje
+    def aplicar_estilo_semaforo(val):
+        if val < 80.0:
+            return 'background-color: #FEE2E2; color: #991B1B; font-weight: bold;'  # Rojo
+        elif val < 100.0:
+            return 'background-color: #FEF3C7; color: #92400E; font-weight: bold;'  # Amarillo tenue
+        else:
+            return 'background-color: #DCFCE7; color: #166534; font-weight: bold;'  # Verde
+
+    if not df_reporte_final.empty:
+        styled_df = df_reporte_final.style.map(
+            aplicar_estilo_semaforo, 
+            subset=['% Cumplimiento Ops', '% Cumplimiento Monto']
+        ).format({
+            'Meta de Operaciones': '{:,.0f}',
+            'Operaciones Desembolsadas': '{:,.0f}',
+            '% Cumplimiento Ops': '{:,.2f}%',
+            'Meta Desembolso (S/)': 'S/ {:,.2f}',
+            'Monto Desembolsado (S/)': 'S/ {:,.2f}',
+            '% Cumplimiento Monto': '{:,.2f}%'
+        })
+
+        st.dataframe(styled_df, use_container_width=True)
+
+        st.markdown("#### 📌 Leyenda de Semáforo de Cumplimiento:")
+        l_col1, l_col2, l_col3 = st.columns(3)
+        l_col1.markdown("🔴 **Rojo (Bajo):** Menor a 80.00%")
+        l_col2.markdown("🟡 **Amarillo (Medio):** Entre 80.00% y 99.99%")
+        l_col3.markdown("🟢 **Verde (Meta Alcanzada):** 100.00% o superior")
+    else:
+        st.info("No se encontraron registros de metas que coincidan con los filtros comerciales seleccionados.")
+
+# --- PESTAÑA 5: MONTE CARLO ---
+with tab5:
     st.subheader("🎲 Motor Estocástico Monte Carlo (100,000 Escenarios - Convenios Perú)")
     st.markdown("Proyección basada en el **promedio mensual histórico real** de la matriz, calibrada con la sensibilidad de créditos por planilla (Picos en Noviembre, Diciembre y Julio).")
 
