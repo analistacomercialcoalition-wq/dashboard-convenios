@@ -122,14 +122,14 @@ if not st.session_state.autenticado:
 # ==========================================
 # CARGA Y LIMPIEZA BLINDADA DE DATOS
 # ==========================================
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=60)  # Reducido ttl a 60 seg para evitar bloqueos de caché
 def cargar_datos_corporativos():
     base_id = "1IBvyIN5H1jYrwEAOD9E5nTCpaBLqxD109HMKCW0Ezt8"
     
     # 1. Matriz Principal de Operaciones (Hoja 1)
     sheet_url_hoja1 = f"https://docs.google.com/spreadsheets/d/{base_id}/gviz/tq?tqx=out:csv&sheet=Hoja%201"
     df = pd.read_csv(sheet_url_hoja1, dtype=str)
-    df.columns = df.columns.str.strip()
+    df.columns = df.columns.astype(str).str.strip()
     
     # Limpieza de NETO
     df['NETO'] = pd.to_numeric(
@@ -251,33 +251,34 @@ def cargar_datos_corporativos():
         columns=['SUPERVISOR', 'ESTADO_SUP', 'PLAZA', 'JEFE ZONAL', 'TERRITORIAL', 'META DE OPERACIONES', 'META DESEMBOLSO']
     )
     for c in ['SUPERVISOR', 'ESTADO_SUP', 'PLAZA', 'JEFE ZONAL', 'TERRITORIAL']:
-        df_metas_oficial[c] = df_metas_oficial[c].str.strip().str.upper()
+        df_metas_oficial[c] = df_metas_oficial[c].astype(str).str.strip().str.upper()
 
-    # 3. Carga Ultra-segura para DOTACIÓN
+    # 3. LECTURA DE DOTACIÓN CON PARSEO Y MANEJO SEGURO
     df_dotacion = pd.DataFrame()
     posibles_urls = [
         f"https://docs.google.com/spreadsheets/d/{base_id}/gviz/tq?tqx=out:csv&sheet=DOTACION",
         f"https://docs.google.com/spreadsheets/d/{base_id}/gviz/tq?tqx=out:csv&sheet=DOTACI%C3%93N",
-        f"https://docs.google.com/spreadsheets/d/{base_id}/export?format=csv&sheet=DOTACION",
-        f"https://docs.google.com/spreadsheets/d/{base_id}/export?format=csv&sheet=DOTACI%C3%93N"
+        f"https://docs.google.com/spreadsheets/d/{base_id}/gviz/tq?tqx=out:csv&sheet=DOTACION%20"
     ]
 
     for url in posibles_urls:
         try:
             df_temp = pd.read_csv(url, dtype=str)
-            if df_temp is not None and isinstance(df_temp, pd.DataFrame) and not df_temp.empty and len(df_temp.columns) > 1:
-                df_dotacion = df_temp
+            if df_temp is not None and not df_temp.empty and len(df_temp.columns) > 1:
+                df_dotacion = df_temp.copy()
                 break
         except Exception:
             continue
 
-    # SANITIZACIÓN DE PANDAS CONTRA NULL/NONE EN DF_DOTACION
-    if df_dotacion is None or not isinstance(df_dotacion, pd.DataFrame) or df_dotacion.empty:
-        df_dotacion = pd.DataFrame(columns=['DNI', 'PROMOTOR', 'ESTADO', 'SUPERVISOR', 'JEFE ZONAL', 'PLAZA'])
-    else:
+    # PROCESAMIENTO SEGURO DE COLUMNAS DE DOTACION
+    if not df_dotacion.empty:
         df_dotacion.columns = df_dotacion.columns.astype(str).str.strip()
-        for col in df_dotacion.columns:
-            df_dotacion[col] = df_dotacion[col].fillna('').astype(str).str.strip().str.upper()
+        cols_dot = list(df_dotacion.columns)
+        for c in cols_dot:
+            df_dotacion[c] = df_dotacion[c].astype(str).replace('nan', '').replace('None', '').str.strip().str.upper()
+    else:
+        # Estructura por defecto si Google Sheets rechaza la conexion
+        df_dotacion = pd.DataFrame(columns=['DNI', 'PROMOTOR', 'ESTADO', 'SUPERVISOR', 'JEFE ZONAL', 'PLAZA'])
 
     return df, df_metas_oficial, df_dotacion
 
@@ -303,7 +304,7 @@ st.markdown("---")
 
 def obtener_opciones_limpias(df_in, col_name):
     if df_in is not None and isinstance(df_in, pd.DataFrame) and col_name in df_in.columns:
-        elementos = sorted([x for x in df_in[col_name].dropna().unique() if x not in ['', 'NAN', 'NAT', 'NONE', 'NaT']])
+        elementos = sorted([x for x in df_in[col_name].dropna().unique() if str(x).strip() not in ['', 'NAN', 'NAT', 'NONE', 'NaT', 'nan']])
         return elementos
     return []
 
@@ -653,7 +654,7 @@ with tab5:
     st.subheader("👥 Dotación Comercial y Producción Mensual por Asesor (S/ Netos)")
     st.markdown("Matriz de dotación con consolidación de **Monto Neto Desembolsado** de **Enero a Octubre** y cálculo de **Promedio Mensual**.")
 
-    if df_dotacion is not None and isinstance(df_dotacion, pd.DataFrame) and not df_dotacion.empty:
+    if not df_dotacion.empty:
         df_dot_flt = df_dotacion.copy()
 
         cols_dot = {str(c).upper(): c for c in df_dot_flt.columns}
@@ -729,7 +730,7 @@ with tab5:
         styled_dotacion = df_dot_unida.style.format(formatos_dict)
         st.dataframe(styled_dotacion, use_container_width=True)
     else:
-        st.warning("⚠️ No se pudieron cargar los datos de Dotación desde el Google Sheet. Verifique que la hoja sea de acceso público.")
+        st.warning("⚠️ No se pudieron cargar los datos de Dotación desde el Google Sheet. Verifique el nombre de la hoja.")
 
 # --- PESTAÑA 6: MONTE CARLO ---
 with tab6:
