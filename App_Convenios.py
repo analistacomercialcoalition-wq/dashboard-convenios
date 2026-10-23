@@ -86,16 +86,29 @@ def cargar_datos_corporativos():
         if col in df.columns:
             df[col] = df[col].fillna('').astype(str).str.strip().str.upper()
 
+    # Extracción garantizada de fechas y meses (mapeo robusto de texto y formato)
     col_sol = [c for c in df.columns if 'SOLICITUD' in c.upper()][0]
     dt_sol = pd.to_datetime(df[col_sol], errors='coerce', format='mixed', dayfirst=True)
     df['FECHA_SOLICITUD_DT'] = dt_sol
-    df['AÑO_MES_SOLICITUD'] = dt_sol.dt.strftime('%Y-%m').fillna('')
+    # Si la fecha falla pero hay texto YYYY-MM, lo extraemos directamente
+    df['AÑO_MES_SOLICITUD'] = dt_sol.dt.strftime('%Y-%m')
+    mask_nan_sol = df['AÑO_MES_SOLICITUD'].isna() | (df['AÑO_MES_SOLICITUD'] == '')
+    if mask_nan_sol.any():
+        df.loc[mask_nan_sol, 'AÑO_MES_SOLICITUD'] = df.loc[mask_nan_sol, col_sol].astype(str).str.slice(0, 7)
 
     col_des = [c for c in df.columns if 'DESEMBOLSO' in c.upper()][0]
     dt_des = pd.to_datetime(df[col_des], errors='coerce', format='mixed', dayfirst=True)
     df['FECHA_DESEMBOLSO_DT'] = dt_des
-    df['AÑO_MES_DESEMBOLSO'] = dt_des.dt.strftime('%Y-%m').fillna('')
+    df['AÑO_MES_DESEMBOLSO'] = dt_des.dt.strftime('%Y-%m')
+    mask_nan_des = df['AÑO_MES_DESEMBOLSO'].isna() | (df['AÑO_MES_DESEMBOLSO'] == '')
+    if mask_nan_des.any():
+        df.loc[mask_nan_des, 'AÑO_MES_DESEMBOLSO'] = df.loc[mask_nan_des, col_des].astype(str).str.slice(0, 7)
+
     df['MES_DESEMBOLSO_NUM'] = dt_des.dt.month.fillna(0).astype(int)
+
+    # Limpieza final de valores extraños en los meses
+    df['AÑO_MES_SOLICITUD'] = df['AÑO_MES_SOLICITUD'].fillna('').astype(str).str.strip()
+    df['AÑO_MES_DESEMBOLSO'] = df['AÑO_MES_DESEMBOLSO'].fillna('').astype(str).str.strip()
 
     df = df[df['FECHA_SOLICITUD_DT'].notna()]
     cols_id = [c for c in df.columns if any(k in c.upper() for k in ['EXPEDIE', 'DNI', 'CREDITO', 'OPERACION'])]
@@ -205,8 +218,8 @@ st.markdown("---")
 
 def obtener_opciones_limpias(df_in, col_name):
     if df_in is not None and isinstance(df_in, pd.DataFrame) and col_name in df_in.columns:
-        elementos = sorted([str(x) for x in df_in[col_name].dropna().unique() if str(x).strip() not in ['', 'NAN', 'NAT', 'NONE', 'NaT', 'nan']])
-        return elementos
+        elementos = sorted([str(x) for x in df_in[col_name].dropna().unique() if str(x).strip() not in ['', 'NAN', 'NAT', 'NONE', 'NaT', 'nan', 'NaT', '20Na-a']])
+        return [e for e in elementos if len(e) == 7 and '-' in e]
     return []
 
 if logo_encontrado:
@@ -282,8 +295,9 @@ with f_col1:
     )
 
 with f_col2:
-    # Opciones de meses extraídas de TODO df_base para que siempre aparezcan completos
-    meses_des_disp = obtener_opciones_limpias(df_base, 'AÑO_MES_DESEMBOLSO')
+    # Garantizamos que tome los meses de TODO el df_base completo sin restricciones previas
+    meses_des_disp = sorted(df_base['AÑO_MES_DESEMBOLSO'].dropna().unique())
+    meses_des_disp = [m for m in meses_des_disp if len(str(m)) == 7 and '-' in str(m)]
     sel_meses_desembolso = st.multiselect(
         "🗓️ Meses Desembolso (Filtro Producción)", 
         options=meses_des_disp, 
@@ -291,7 +305,8 @@ with f_col2:
     )
 
 with f_col3:
-    meses_sol_disp = obtener_opciones_limpias(df_base, 'AÑO_MES_SOLICITUD')
+    meses_sol_disp = sorted(df_base['AÑO_MES_SOLICITUD'].dropna().unique())
+    meses_sol_disp = [m for m in meses_sol_disp if len(str(m)) == 7 and '-' in str(m)]
     sel_meses_remesa = st.multiselect(
         "📥 Filtrar Meses de Remesa (Fecha Solicitud)", 
         options=meses_sol_disp, 
@@ -466,7 +481,7 @@ with tab4:
         0.0
     )
 
-    # Ordenamiento estricto solicitado: 1° % Cumplimiento Ops, 2° % Cumplimiento Monto (ambos descendenetes)
+    # Ordenamiento estricto solicitado: 1° % Cumplimiento Ops, 2° % Cumplimiento Monto (ambos descendentes)
     df_reporte = df_reporte.sort_values(by=['% Cumplimiento Ops', '% Cumplimiento Monto'], ascending=[False, False]).reset_index(drop=True)
 
     df_reporte_final = df_reporte[[
@@ -483,7 +498,6 @@ with tab4:
     })
 
     if not df_reporte_final.empty:
-        # Formatear porcentajes como enteros sin decimales para una vista limpia y gerencial
         df_reporte_display = df_reporte_final.copy()
         df_reporte_display['% Cumplimiento Ops'] = df_reporte_display['% Cumplimiento Ops'].round(0).astype(int).astype(str) + '%'
         df_reporte_display['% Cumplimiento Monto'] = df_reporte_display['% Cumplimiento Monto'].round(0).astype(int).astype(str) + '%'
