@@ -108,6 +108,16 @@ def cargar_datos_corporativos():
 
     df['MES_DESEMBOLSO_NUM'] = dt_des.dt.month.fillna(0).astype(int)
 
+    # Identificar columna DNI de Hoja 1 (Columna V / índice 21 o por nombre)
+    if len(df.columns) > 21:
+        col_v_nombre = df.columns[21]
+        df['DNI_HOJA1'] = df[col_v_nombre].astype(str).str.strip()
+    else:
+        cols_dni_h1 = [c for c in df.columns if 'DNI' in c.upper()]
+        df['DNI_HOJA1'] = df[cols_dni_h1[0]].astype(str).str.strip() if cols_dni_h1 else ''
+    
+    df['DNI_HOJA1'] = df['DNI_HOJA1'].apply(lambda x: x.zfill(8) if x.isdigit() and len(x) < 8 else x)
+
     cols_id = [c for c in df.columns if any(k in c.upper() for k in ['EXPEDIE', 'DNI', 'CREDITO', 'OPERACION'])]
     df['ID_UNICO'] = df[cols_id[0]].astype(str).str.strip() if cols_id else df.index.astype(str)
     df = df.drop_duplicates(subset=['ID_UNICO', 'AÑO_MES_SOLICITUD'], keep='first')
@@ -753,17 +763,22 @@ with tab5:
     st.plotly_chart(fig_mc, use_container_width=True)
 
 with tab6:
-    st.subheader("👥 Dotación de Asesores (Personal Activo)")
+    st.subheader("👥 Dotación de Asesores (Personal Activo & Cruce de Desembolsos Ene-Oct)")
     
     if df_dotacion is not None and not df_dotacion.empty:
         df_dot_flt = df_dotacion.copy()
         
-        # Filtro obligatorio: Solo estado ACTIVO
+        # 1. Retirar columnas no deseadas: ss, q(cese), mes cese, filtro
+        cols_a_retirar = ['SS', 'Q(CESE)', 'Q (CESE)', 'MES CESE', 'FILTRO']
+        cols_mantener_dot = [c for c in df_dot_flt.columns if c.upper() not in cols_a_retirar]
+        df_dot_flt = df_dot_flt[cols_mantener_dot].copy()
+
+        # 2. Filtrar únicamente personal en estado ACTIVO
         cols_est = [c for c in df_dot_flt.columns if 'ESTADO' in c.upper()]
         if cols_est:
             df_dot_flt = df_dot_flt[df_dot_flt[cols_est[0]].astype(str).str.upper() == 'ACTIVO']
 
-        # Filtro de Territorial (Seguridad por usuario + Selección en sidebar)
+        # 3. Aplicar filtros del dashboard (Sidebar)
         cols_ter = [c for c in df_dot_flt.columns if 'TERRITORIAL' in c.upper()]
         if cols_ter:
             if territorial_asignada != "TODAS":
@@ -771,34 +786,64 @@ with tab6:
             elif sel_territorial != "TODOS":
                 df_dot_flt = df_dot_flt[df_dot_flt[cols_ter[0]] == sel_territorial]
 
-        # Filtro por Zona
         cols_zona = [c for c in df_dot_flt.columns if 'ZONA' in c.upper()]
         if cols_zona and sel_zona != "TODAS":
             df_dot_flt = df_dot_flt[df_dot_flt[cols_zona[0]] == sel_zona]
 
-        # Filtro por Plaza
         cols_plz = [c for c in df_dot_flt.columns if 'PLAZA' in c.upper()]
         if cols_plz and sel_plaza != "TODAS":
             df_dot_flt = df_dot_flt[df_dot_flt[cols_plz[0]] == sel_plaza]
 
-        # Filtro por Jefe Zonal
         cols_jefe = [c for c in df_dot_flt.columns if 'JEFE' in c.upper()]
         if cols_jefe and sel_jefe != "TODOS":
             df_dot_flt = df_dot_flt[df_dot_flt[cols_jefe[0]] == sel_jefe]
 
-        # Filtro por Supervisor
         cols_sup = [c for c in df_dot_flt.columns if 'SUPERVISOR' in c.upper()]
         if cols_sup and sel_sup != "TODOS":
             df_dot_flt = df_dot_flt[df_dot_flt[cols_sup[0]] == sel_sup]
 
-        # Filtro por Asesor
         cols_asesor = [c for c in df_dot_flt.columns if 'ASESOR' in c.upper()]
         if cols_asesor and sel_asesor != "TODOS":
             df_dot_flt = df_dot_flt[df_dot_flt[cols_asesor[0]] == sel_asesor]
 
+        # 4. Cruzar con Hoja 1 por DNI para calcular montos netos por mes (Enero a Octubre) + Promedio
+        if not df_dot_flt.empty and not df_base.empty:
+            map_meses = {1: 'Enero', 2: 'Febrero', 3: 'Marzo', 4: 'Abril', 5: 'Mayo', 6: 'Junio', 7: 'Julio', 8: 'Agosto', 9: 'Setiembre', 10: 'Octubre', 11: 'Noviembre', 12: 'Diciembre'}
+            df_base_temp = df_base[df_base['ESTADO'] == 'DESEMBOLSADO'].copy()
+            df_base_temp['MES_NUM'] = df_base_temp['FECHA_DESEMBOLSO_DT'].dt.month
+            df_base_temp['MES_NOMBRE'] = df_base_temp['MES_NUM'].map(map_meses)
+
+            # Pivot por DNI de Hoja 1
+            df_pivot = df_base_temp.pivot_table(index='DNI_HOJA1', columns='MES_NOMBRE', values='NETO', aggfunc='sum', fill_value=0)
+
+            meses_cols = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Setiembre', 'Octubre']
+            for m in meses_cols:
+                if m not in df_pivot.columns:
+                    df_pivot[m] = 0.0
+            
+            df_pivot = df_pivot[meses_cols].copy()
+            df_pivot['Promedio'] = df_pivot[meses_cols].mean(axis=1)
+            df_pivot = df_pivot.reset_index()
+
+            cols_dni_dot = [c for c in df_dot_flt.columns if 'DNI' in c.upper()]
+            if cols_dni_dot:
+                col_dni_dot = cols_dni_dot[0]
+                df_dot_flt = pd.merge(df_dot_flt, df_pivot, left_on=col_dni_dot, right_on='DNI_HOJA1', how='left')
+                if 'DNI_HOJA1' in df_dot_flt.columns:
+                    df_dot_flt = df_dot_flt.drop(columns=['DNI_HOJA1'])
+                
+                for m in meses_cols + ['Promedio']:
+                    if m in df_dot_flt.columns:
+                        df_dot_flt[m] = df_dot_flt[m].fillna(0.0)
+
         if not df_dot_flt.empty:
             st.markdown(f"**Total Personal Activo Filtrado:** `{len(df_dot_flt)}` colaboradores")
-            st.dataframe(df_dot_flt, use_container_width=True)
+            
+            # Formatear columnas monetarias para visualización
+            cols_a_formatear = [c for c in ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Setiembre', 'Octubre', 'Promedio'] if c in df_dot_flt.columns]
+            
+            styled_dot = df_dot_flt.style.format({col: formato_compacto_limpio for col in cols_a_formatear})
+            st.dataframe(styled_dot, use_container_width=True)
         else:
             st.info("No se encontraron colaboradores en estado ACTIVO que coincidan con la combinación de filtros seleccionados.")
     else:
