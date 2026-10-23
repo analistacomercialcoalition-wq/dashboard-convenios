@@ -91,7 +91,7 @@ with col_tit:
 st.markdown("---")
 
 # ==========================================
-# 1. CARGA Y LIMPIEZA DE DATOS (HOJA 1 Y PESTAÑAS ADICIONALES)
+# 1. CARGA Y LIMPIEZA DE DATOS (MATRIZ PRINCIPAL)
 # ==========================================
 @st.cache_data(ttl=600)
 def cargar_datos_corporativos():
@@ -139,56 +139,10 @@ def cargar_datos_corporativos():
     df['ID_UNICO'] = df[cols_id[0]].astype(str).str.strip() if cols_id else df.index.astype(str)
     df = df.drop_duplicates(subset=['ID_UNICO', 'AÑO_MES_SOLICITUD'], keep='first')
 
-    # Carga de la pestaña Reporte Venta
-    sheet_url_venta = "https://docs.google.com/spreadsheets/d/1IBvyIN5H1jYrwEAOD9E5nTCpaBLqxD109HMKCW0Ezt8/gviz/tq?tqx=out:csv&sheet=Reporte%20Venta"
-    try:
-        df_reporte_venta = pd.read_csv(sheet_url_venta, dtype=str)
-        df_reporte_venta.columns = df_reporte_venta.columns.str.strip()
-        for c in df_reporte_venta.columns:
-            df_reporte_venta[c] = df_reporte_venta[c].fillna('').astype(str).str.strip().str.upper()
-    except Exception:
-        df_reporte_venta = pd.DataFrame()
+    return df
 
-    # Carga de la pestaña REPORTE VENTA j Jefe
-    sheet_url_jefe = "https://docs.google.com/spreadsheets/d/1IBvyIN5H1jYrwEAOD9E5nTCpaBLqxD109HMKCW0Ezt8/gviz/tq?tqx=out:csv&sheet=REPORTE%20VENTA%20j%20Jefe"
-    try:
-        df_reporte_jefe = pd.read_csv(sheet_url_jefe, dtype=str)
-        df_reporte_jefe.columns = df_reporte_jefe.columns.str.strip()
-        
-        # Eliminar duplicados en encabezados automáticamente
-        nuevas_cols = []
-        contador_cols = {}
-        for c in df_reporte_jefe.columns:
-            c_limpia = c if c != "" and not c.startswith("Unnamed") else "Columna_Vacia"
-            if c_limpia in contador_cols:
-                contador_cols[c_limpia] += 1
-                nuevas_cols.append(f"{c_limpia}_{contador_cols[c_limpia]}")
-            else:
-                contador_cols[c_limpia] = 0
-                nuevas_cols.append(c_limpia)
-        df_reporte_jefe.columns = nuevas_cols
-
-        # Renombrar los encabezados de metas solicitados
-        nuevos_nombres = {}
-        for col in df_reporte_jefe.columns:
-            col_upper = col.upper()
-            if 'META' in col_upper and 'OPERACION' in col_upper:
-                nuevos_nombres[col] = 'Meta de operaciones'
-            elif 'META' in col_upper and 'OCTUBRE' in col_upper:
-                nuevos_nombres[col] = 'Meta de monto'
-        
-        df_reporte_jefe = df_reporte_jefe.rename(columns=nuevos_nombres)
-
-        for c in df_reporte_jefe.columns:
-            df_reporte_jefe[c] = df_reporte_jefe[c].fillna('').astype(str).str.strip().str.upper()
-        
-    except Exception:
-        df_reporte_jefe = pd.DataFrame()
-    
-    return df, df_reporte_venta, df_reporte_jefe
-
-with st.spinner("Sincronizando matriz corporativa y reportes desde Google Sheets..."):
-    df_base, df_reporte_venta, df_reporte_jefe = cargar_datos_corporativos()
+with st.spinner("Sincronizando matriz corporativa Coalition..."):
+    df_base = cargar_datos_corporativos()
 
 def obtener_opciones_limpias(df_in, col_name):
     if col_name in df_in.columns:
@@ -352,49 +306,12 @@ df_mensual = df_flt_prod.groupby('AÑO_MES_DESEMBOLSO').agg(
 ).reset_index() if not df_flt_prod.empty else pd.DataFrame()
 
 # ==========================================
-# 4. CONSTRUCCIÓN Y CRUCE INTELIGENTE POR DATOS PARA REPORTES
+# 4. ESTRUCTURA DE PESTAÑAS DEL DASHBOARD (4 PESTAÑAS)
 # ==========================================
-# Función robusta para filtrar tablas secundarias buscando coincidencias de columnas
-def filtrar_tabla_por_datos(df_tabla, territorial, zona, plaza, jefe, supervisor):
-    if df_tabla.empty:
-        return df_tabla
-    
-    df_res = df_tabla.copy()
-    
-    # Mapeo y búsqueda automática de columnas equivalentes
-    cols_up = {c.upper(): c for c in df_res.columns}
-    
-    col_t = next((cols_up[k] for k in cols_up if 'TERRITORIAL' in k), None)
-    col_z = next((cols_up[k] for k in cols_up if 'ZONA' in k and 'JEFE' not in k), None)
-    col_p = next((cols_up[k] for k in cols_up if 'PLAZA' in k), None)
-    col_j = next((cols_up[k] for k in cols_up if 'JEFE' in k or 'ZONAL' in k), None)
-    col_s = next((cols_up[k] for k in cols_up if 'SUPERVISOR' in k), None)
-    
-    if territorial != "TODOS" and col_t:
-        df_res = df_res[df_res[col_t] == territorial]
-    if zona != "TODAS" and col_z:
-        df_res = df_res[df_res[col_z] == zona]
-    if plaza != "TODAS" and col_p:
-        df_res = df_res[df_res[col_p] == plaza]
-    if jefe != "TODOS" and col_j:
-        df_res = df_res[df_res[col_j] == jefe]
-    if supervisor != "TODOS" and col_s:
-        df_res = df_res[df_res[col_s] == supervisor]
-        
-    return df_res
-
-df_venta_filtrado = filtrar_tabla_por_datos(df_reporte_venta, sel_territorial, sel_zona, sel_plaza, sel_jefe, sel_sup)
-df_jefe_filtrado = filtrar_tabla_por_datos(df_reporte_jefe, sel_territorial, sel_zona, sel_plaza, sel_jefe, sel_sup)
-
-# ==========================================
-# 5. ESTRUCTURA DE PESTAÑAS DEL DASHBOARD
-# ==========================================
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+tab1, tab2, tab3, tab4 = st.tabs([
     "📊 Producción Total por Mes", 
     "📦 Remesas (Volumen por Fecha de Solicitud)", 
     "🏆 Red Comercial & Ranking", 
-    "📑 Reporte Venta",
-    "👔 Reporte Jefe",
     "🎲 Monte Carlo (Estacionalidad Perú)"
 ])
 
@@ -497,26 +414,8 @@ with tab3:
             fig_jefe.update_layout(template="plotly_white")
             st.plotly_chart(fig_jefe, use_container_width=True)
 
-# --- PESTAÑA 4: REPORTE VENTA (CRUCE POR DATOS) ---
+# --- PESTAÑA 4: MONTE CARLO ---
 with tab4:
-    st.subheader("📑 Pestaña: Reporte Venta (Sincronizado con Filtros)")
-    st.markdown("Visualización cruzada basada en las coincidencias exactas de datos de la barra lateral.")
-    if not df_venta_filtrado.empty:
-        st.dataframe(df_venta_filtrado, use_container_width=True)
-    else:
-        st.info("No se encontraron registros en 'Reporte Venta' para los filtros seleccionados.")
-
-# --- PESTAÑA 5: REPORTE JEFE (CRUCE POR DATOS) ---
-with tab5:
-    st.subheader("👔 Pestaña: Reporte Venta j Jefe (Sincronizado con Filtros)")
-    st.markdown("Visualización cruzada basada en las coincidencias exactas de datos de la barra lateral.")
-    if not df_jefe_filtrado.empty:
-        st.dataframe(df_jefe_filtrado, use_container_width=True)
-    else:
-        st.info("No se encontraron registros en 'REPORTE VENTA j Jefe' para los filtros seleccionados.")
-
-# --- PESTAÑA 6: MONTE CARLO ---
-with tab6:
     st.subheader("🎲 Motor Estocástico Monte Carlo (100,000 Escenarios - Convenios Perú)")
     st.markdown("Proyección basada en el **promedio mensual histórico real** de la matriz, calibrada con la sensibilidad de créditos por planilla (Picos en Noviembre, Diciembre y Julio).")
 
