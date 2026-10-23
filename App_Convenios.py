@@ -119,13 +119,15 @@ if not st.session_state.autenticado:
     st.stop()
 
 # ==========================================
-# CARGA Y LIMPIEZA DE DATOS (MATRIZ, METAS Y DOTACIÓN)
+# CARGA Y LIMPIEZA ROBUSTA DE DATOS (MATRIZ, METAS Y DOTACIÓN)
 # ==========================================
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=300)
 def cargar_datos_corporativos():
-    # Matriz Principal de Operaciones (Hoja 1)
-    sheet_url = "https://docs.google.com/spreadsheets/d/1IBvyIN5H1jYrwEAOD9E5nTCpaBLqxD109HMKCW0Ezt8/gviz/tq?tqx=out:csv&sheet=Hoja%201"
-    df = pd.read_csv(sheet_url, dtype=str)
+    base_id = "1IBvyIN5H1jYrwEAOD9E5nTCpaBLqxD109HMKCW0Ezt8"
+    
+    # 1. Matriz Principal de Operaciones (Hoja 1)
+    sheet_url_hoja1 = f"https://docs.google.com/spreadsheets/d/{base_id}/gviz/tq?tqx=out:csv&sheet=Hoja%201"
+    df = pd.read_csv(sheet_url_hoja1, dtype=str)
     df.columns = df.columns.str.strip()
     
     # Limpieza de NETO
@@ -134,7 +136,7 @@ def cargar_datos_corporativos():
         errors='coerce'
     ).fillna(0)
 
-    # Limpieza rigurosa de texto
+    # Limpieza de textos
     cols_a_limpiar = ['TERRITORIAL', 'ZONA', 'PLAZA', 'JEFE ZONAL', 'SUPERVISOR', 'ASESOR CORRECTO', 'ESTADO']
     for col in cols_a_limpiar:
         if col in df.columns:
@@ -250,15 +252,24 @@ def cargar_datos_corporativos():
     for c in ['SUPERVISOR', 'ESTADO_SUP', 'PLAZA', 'JEFE ZONAL', 'TERRITORIAL']:
         df_metas_oficial[c] = df_metas_oficial[c].str.strip().str.upper()
 
-    # Carga de la pestaña DOTACIÓN
-    sheet_url_dotacion = "https://docs.google.com/spreadsheets/d/1IBvyIN5H1jYrwEAOD9E5nTCpaBLqxD109HMKCW0Ezt8/gviz/tq?tqx=out:csv&sheet=DOTACION"
-    try:
-        df_dotacion = pd.read_csv(sheet_url_dotacion, dtype=str)
+    # 2. Carga Multicapa de la Pestaña DOTACIÓN (Resuelve Error de lectura de Google Sheets)
+    posibles_nombres_dotacion = ["DOTACION", "DOTACIÓN", "Dotacion", "Dotación"]
+    df_dotacion = pd.DataFrame()
+
+    for nom in posibles_nombres_dotacion:
+        try:
+            url_dot = f"https://docs.google.com/spreadsheets/d/{base_id}/gviz/tq?tqx=out:csv&sheet={nom}"
+            df_temp = pd.read_csv(url_dot, dtype=str)
+            if not df_temp.empty and len(df_temp.columns) > 1:
+                df_dotacion = df_temp
+                break
+        except Exception:
+            continue
+
+    if not df_dotacion.empty:
         df_dotacion.columns = df_dotacion.columns.str.strip()
         for col in df_dotacion.columns:
             df_dotacion[col] = df_dotacion[col].fillna('').astype(str).str.strip().str.upper()
-    except Exception:
-        df_dotacion = pd.DataFrame()
 
     return df, df_metas_oficial, df_dotacion
 
@@ -284,7 +295,7 @@ st.markdown("---")
 
 def obtener_opciones_limpias(df_in, col_name):
     if col_name in df_in.columns:
-        elementos = sorted([x for x in df_in[col_name].dropna().unique() if x not in ['', 'NAN', 'NAT', 'NONE']])
+        elementos = sorted([x for x in df_in[col_name].dropna().unique() if x not in ['', 'NAN', 'NAT', 'NONE', 'NaT']])
         return elementos
     return []
 
@@ -354,13 +365,13 @@ if sel_asesor != "TODOS" and 'ASESOR CORRECTO' in df_flt_sidebar.columns:
 df_flt = df_flt_sidebar.copy()
 
 # ==========================================
-# FILTROS SUPERIORES TEMPORALES
+# FILTROS SUPERIORES TEMPORALES (SOLUCIÓN A ERROR 1: CATÁLOGO COMPLETO SIEMPRE DISPONIBLE)
 # ==========================================
 st.markdown("### 🎛️ Controles Temporales y Estado Operativo")
 f_col1, f_col2, f_col3 = st.columns(3)
 
 with f_col1:
-    estados_disp = obtener_opciones_limpias(df_flt, 'ESTADO')
+    estados_disp = obtener_opciones_limpias(df_base, 'ESTADO')
     sel_estados_prod = st.multiselect(
         "📌 Estado Operación (Filtro Producción)", 
         options=estados_disp, 
@@ -368,6 +379,7 @@ with f_col1:
     )
 
 with f_col2:
+    # Carga SIEMPRE todas las opciones de meses de desembolso de la base completa
     meses_des_disp = obtener_opciones_limpias(df_base, 'AÑO_MES_DESEMBOLSO')
     sel_meses_desembolso = st.multiselect(
         "🗓️ Meses Desembolso (Filtro Producción)", 
@@ -376,6 +388,7 @@ with f_col2:
     )
 
 with f_col3:
+    # Carga SIEMPRE todas las opciones de meses de solicitud de remesas de la base completa
     meses_sol_disp = obtener_opciones_limpias(df_base, 'AÑO_MES_SOLICITUD')
     sel_meses_remesa = st.multiselect(
         "📥 Filtrar Meses de Remesa (Fecha Solicitud)", 
@@ -424,7 +437,7 @@ df_mensual = df_flt_prod.groupby('AÑO_MES_DESEMBOLSO').agg(
 ).reset_index() if not df_flt_prod.empty else pd.DataFrame()
 
 # ==========================================
-# ESTRUCTURA DE 6 PESTAÑAS DEL DASHBOARD (INCLUYE DOTACIÓN)
+# ESTRUCTURA DE 6 PESTAÑAS DEL DASHBOARD (INCLUYE DOTACIÓN Y REMESAS CORREGIDAS)
 # ==========================================
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "📊 Producción Total por Mes", 
@@ -593,7 +606,7 @@ with tab4:
         'META DE OPERACIONES': 'Meta de Operaciones',
         'OPERACIONES_DESEMBOLSA': 'Ops Desembolsadas',
         'CUMPLIMIENTO_OPS': '% Cumplimiento Ops',
-        'META DESEMBOLSO': 'Meta Desembolso (S/)',
+        'META DESEMBOLSO': 'Meta DesembolSO (S/)',
         'MONTO_DESEMBOLSADO': 'Monto Desembolsado (S/)',
         'CUMPLIMIENTO_MONTO': '% Cumplimiento Monto'
     })
@@ -614,8 +627,8 @@ with tab4:
             'Meta de Operaciones': '{:,.0f}',
             'Ops Desembolsadas': '{:,.0f}',
             '% Cumplimiento Ops': '{:,.0f}%',
-            'Meta Desembolso (S/)': formato_compacto_limpio,
-            'Monto Desembolso (S/)': formato_compacto_limpio,
+            'Meta DesembolSO (S/)': formato_compacto_limpio,
+            'Monto Desembolsado (S/)': formato_compacto_limpio,
             '% Cumplimiento Monto': '{:,.0f}%'
         })
 
@@ -629,7 +642,7 @@ with tab4:
     else:
         st.info("No se encontraron registros de metas que coincidan con los filtros comerciales seleccionados.")
 
-# --- PESTAÑA 5: DOTACIÓN Y PRODUCCIÓN MENSUAL (ENERO A OCTUBRE + PROMEDIO) ---
+# --- PESTAÑA 5: DOTACIÓN Y PRODUCCIÓN MENSUAL (SOLUCIÓN A ERROR 2: CARGA COMPLETA Y DINÁMICA) ---
 with tab5:
     st.subheader("👥 Dotación Comercial y Producción Mensual por Asesor (S/ Netos)")
     st.markdown("Matriz de dotación con consolidación de **Monto Neto Desembolsado** de **Enero a Octubre** y cálculo de **Promedio Mensual**.")
@@ -637,13 +650,13 @@ with tab5:
     if not df_dotacion.empty:
         df_dot_flt = df_dotacion.copy()
 
-        # Filtrado por barra lateral en la tabla de Dotación
+        # Filtrado inteligente por estructura comercial
         cols_dot = {c.upper(): c for c in df_dot_flt.columns}
         col_dot_t = next((cols_dot[k] for k in cols_dot if 'TERRITORIAL' in k), None)
         col_dot_p = next((cols_dot[k] for k in cols_dot if 'PLAZA' in k or 'ZONA' in k), None)
         col_dot_j = next((cols_dot[k] for k in cols_dot if 'JEFE' in k), None)
         col_dot_s = next((cols_dot[k] for k in cols_dot if 'SUPERVISOR' in k), None)
-        col_dot_a = next((cols_dot[k] for k in cols_dot if 'ASESOR' in k or 'NOMBRE' in k), None)
+        col_dot_a = next((cols_dot[k] for k in cols_dot if any(key in k for key in ['ASESOR', 'NOMBRE', 'DNI', 'PERSONAL'])), None)
 
         if sel_territorial != "TODOS" and col_dot_t:
             df_dot_flt = df_dot_flt[df_dot_flt[col_dot_t] == sel_territorial]
@@ -656,7 +669,7 @@ with tab5:
         if sel_asesor != "TODOS" and col_dot_a:
             df_dot_flt = df_dot_flt[df_dot_flt[col_dot_a] == sel_asesor]
 
-        # Obtener producción real desembolsada agrupada por Asesor Correcto y Número de Mes (Enero = 1, ..., Octubre = 10)
+        # Producción real desembolsada agrupada por Asesor Correcto de Enero (1) a Octubre (10)
         df_desem_matriz = df_base[
             (df_base['ESTADO'] == 'DESEMBOLSADO') & 
             (df_base['MES_DESEMBOLSO_NUM'] >= 1) & 
@@ -673,7 +686,6 @@ with tab5:
         else:
             pivot_prod = pd.DataFrame(columns=['ASESOR CORRECTO'])
 
-        # Mapear los meses de Enero a Octubre
         nombres_meses = {
             1: 'Enero (S/)', 2: 'Febrero (S/)', 3: 'Marzo (S/)', 4: 'Abril (S/)',
             5: 'Mayo (S/)', 6: 'Junio (S/)', 7: 'Julio (S/)', 8: 'Agosto (S/)',
@@ -686,7 +698,6 @@ with tab5:
             else:
                 pivot_prod[nom_m] = 0.0
 
-        # Identificar columna clave de cruce por asesor en Dotación
         col_asesor_key = col_dot_a if col_dot_a else df_dot_flt.columns[0]
 
         df_dot_unida = pd.merge(
@@ -701,23 +712,22 @@ with tab5:
         for c in cols_meses_lista:
             df_dot_unida[c] = df_dot_unida[c].fillna(0.0)
 
-        # Cálculo de Promedio Mensual por Asesor
+        # Cálculo de Promedio Mensual
         df_dot_unida['Promedio Mensual (S/)'] = df_dot_unida[cols_meses_lista].mean(axis=1)
 
         if 'ASESOR CORRECTO' in df_dot_unida.columns and col_asesor_key != 'ASESOR CORRECTO':
             df_dot_unida = df_dot_unida.drop(columns=['ASESOR CORRECTO'])
 
-        # Ordenar descendentemente por Promedio Mensual
+        # Ordenar por Promedio Mensual
         df_dot_unida = df_dot_unida.sort_values('Promedio Mensual (S/)', ascending=False).reset_index(drop=True)
 
-        # Formatear montos en moneda compacta
         formatos_dict = {c: formato_compacto_limpio for c in cols_meses_lista}
         formatos_dict['Promedio Mensual (S/)'] = formato_compacto_limpio
 
         styled_dotacion = df_dot_unida.style.format(formatos_dict)
         st.dataframe(styled_dotacion, use_container_width=True)
     else:
-        st.info("No se pudo cargar la pestaña de Dotación desde el Google Sheet.")
+        st.error("⚠️ No se pudo vincular la pestaña de Dotación. Por favor asegúrate de que en el Google Sheet la pestaña se llame exactamente 'DOTACION' o 'DOTACIÓN' y tenga acceso público.")
 
 # --- PESTAÑA 6: MONTE CARLO ---
 with tab6:
