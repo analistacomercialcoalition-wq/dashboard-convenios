@@ -367,7 +367,7 @@ with tab1:
         st.info("No se encontraron registros de producción con los filtros seleccionados.")
 
 with tab2:
-    st.subheader("📦 Ingreso de Remesas por Días (Fecha de Solicitud)")
+    st.subheader("📦 Control General de Remesas (Solicitudes)")
     est_rem_disp = ["TODOS"] + obtener_opciones_limpias(df_remesas, 'ESTADO')
     sel_est_rem = st.selectbox("📌 Filtrar Estado interno en Remesas (Opcional):", est_rem_disp)
     
@@ -388,62 +388,97 @@ with tab2:
 
     st.markdown("---")
 
-    if not df_rem_tab.empty and df_rem_tab['FECHA_SOLICITUD_DT'].notna().any():
-        df_diario_rem = df_rem_tab.groupby(df_rem_tab['FECHA_SOLICITUD_DT'].dt.date).size().reset_index(name='CANTIDAD')
-        df_diario_rem = df_diario_rem.sort_values('FECHA_SOLICITUD_DT')
-        df_diario_rem['FECHA_STR'] = pd.to_datetime(df_diario_rem['FECHA_SOLICITUD_DT']).dt.strftime('%d %b')
+    # 1. Gráfico de Barras Mensual Original
+    if not df_rem_tab.empty:
+        df_rem_mensual = df_rem_tab.groupby('AÑO_MES_SOLICITUD').size().reset_index(name='CANTIDAD_SOLICITUDES')
+        df_rem_mensual = df_rem_mensual[df_rem_mensual['AÑO_MES_SOLICITUD'] != ''].sort_values('AÑO_MES_SOLICITUD')
 
-        fig_rem_line = go.Figure()
-        
-        # Línea y área sombreada verde de remesas
-        fig_rem_line.add_trace(go.Scatter(
-            x=df_diario_rem['FECHA_STR'],
-            y=df_diario_rem['CANTIDAD'],
-            mode='lines+markers+text',
-            name='Remesas',
-            text=df_diario_rem['CANTIDAD'],
-            textposition='top center',
-            line=dict(color='#16A34A', width=3, dash='dash'),
-            marker=dict(size=8, color='#16A34A'),
-            fill='tozeroy',
-            fillcolor='rgba(22, 163, 74, 0.1)'
-        ))
-
-        # Línea horizontal de Meta fija en 90
-        fig_rem_line.add_hline(
-            y=90, 
-            line_dash="dash", 
-            line_color="black", 
-            line_width=2,
-            annotation_text="Meta: 90 Ops", 
-            annotation_position="top left"
+        fig_rem_bar = px.bar(
+            df_rem_mensual, x='AÑO_MES_SOLICITUD', y='CANTIDAD_SOLICITUDES', text='CANTIDAD_SOLICITUDES',
+            title="Conteo de Remesas por Mes de Solicitud",
+            labels={'AÑO_MES_SOLICITUD': 'Mes de Solicitud', 'CANTIDAD_SOLICITUDES': 'N° de Solicitudes'},
+            color_discrete_sequence=['#0D9488']
         )
+        fig_rem_bar.update_traces(texttemplate='%{text:,} Ops', textposition='outside')
+        fig_rem_bar.update_layout(height=450, xaxis_tickangle=-45, template="plotly_white")
+        st.plotly_chart(fig_rem_bar, use_container_width=True)
 
-        fig_rem_line.update_layout(
-            title="Ingreso de remesas por día",
-            xaxis_title="Fecha de Solicitud",
-            yaxis_title="N° de Operaciones",
-            height=450,
-            template="plotly_white",
-            showlegend=True,
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0)
-        )
-        st.plotly_chart(fig_rem_line, use_container_width=True)
-    else:
-        st.info("No hay suficientes datos diarios de remesas para graficar.")
+    st.markdown("---")
 
+    # 2. Gráfico de Líneas Diario con Meta de 90 Ops y Torta de Estados
     col_r1, col_r2 = st.columns([2, 1])
+
+    with col_r1:
+        if not df_rem_tab.empty and df_rem_tab['FECHA_SOLICITUD_DT'].notna().any():
+            df_diario_rem = df_rem_tab.groupby(df_rem_tab['FECHA_SOLICITUD_DT'].dt.date).size().reset_index(name='CANTIDAD')
+            df_diario_rem = df_diario_rem.sort_values('FECHA_SOLICITUD_DT')
+            df_diario_rem['FECHA_STR'] = pd.to_datetime(df_diario_rem['FECHA_SOLICITUD_DT']).dt.strftime('%d %b')
+
+            fig_rem_line = go.Figure()
+            fig_rem_line.add_trace(go.Scatter(
+                x=df_diario_rem['FECHA_STR'],
+                y=df_diario_rem['CANTIDAD'],
+                mode='lines+markers+text',
+                name='Remesas',
+                text=df_diario_rem['CANTIDAD'],
+                textposition='top center',
+                line=dict(color='#16A34A', width=3, dash='dash'),
+                marker=dict(size=8, color='#16A34A'),
+                fill='tozeroy',
+                fillcolor='rgba(22, 163, 74, 0.1)'
+            ))
+            fig_rem_line.add_hline(
+                y=90, line_dash="dash", line_color="black", line_width=2,
+                annotation_text="Meta: 90 Ops", annotation_position="top left"
+            )
+            fig_rem_line.update_layout(
+                title="Ingreso de Remesas por Días (Fecha de Solicitud)",
+                xaxis_title="Fecha de Solicitud", yaxis_title="N° de Operaciones",
+                height=450, template="plotly_white", showlegend=True,
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0)
+            )
+            st.plotly_chart(fig_rem_line, use_container_width=True)
+        else:
+            st.info("No hay suficientes datos diarios de remesas para graficar.")
+
     with col_r2:
         if not df_rem_tab.empty:
             df_est = df_rem_tab.groupby('ESTADO').size().reset_index(name='CANTIDAD')
             fig_pie_est = px.pie(
                 df_est, names='ESTADO', values='CANTIDAD',
-                title="Distribución de Estados en las Solicitudes", hole=0.4,
+                title="Distribución de Estados", hole=0.4,
                 color_discrete_sequence=px.colors.qualitative.Set2
             )
             fig_pie_est.update_traces(textinfo='value+percent')
-            fig_pie_est.update_layout(height=400, template="plotly_white")
+            fig_pie_est.update_layout(height=450, template="plotly_white")
             st.plotly_chart(fig_pie_est, use_container_width=True)
+
+    st.markdown("---")
+    st.subheader("📊 Participación y Distribución de Remesas")
+
+    # 3 Gráficos de Participación Adicionales: Territorial, Zonal y Supervisor
+    p_col1, p_col2, p_col3 = st.columns(3)
+
+    with p_col1:
+        if not df_rem_tab.empty and 'TERRITORIAL' in df_rem_tab.columns:
+            df_part_ter = df_rem_tab.groupby('TERRITORIAL').size().reset_index(name='CANTIDAD').sort_values('CANTIDAD', ascending=True)
+            fig_ter = px.bar(df_part_ter, x='CANTIDAD', y='TERRITORIAL', orientation='h', title="Participación por Territorial", text_auto=',.0f', color_discrete_sequence=['#2563EB'])
+            fig_ter.update_layout(height=350, template="plotly_white")
+            st.plotly_chart(fig_ter, use_container_width=True)
+
+    with p_col2:
+        if not df_rem_tab.empty and 'ZONA' in df_rem_tab.columns:
+            df_part_zona = df_rem_tab.groupby('ZONA').size().reset_index(name='CANTIDAD').sort_values('CANTIDAD', ascending=True)
+            fig_zona = px.bar(df_part_zona, x='CANTIDAD', y='ZONA', orientation='h', title="Participación por Zona", text_auto=',.0f', color_discrete_sequence=['#0D9488'])
+            fig_zona.update_layout(height=350, template="plotly_white")
+            st.plotly_chart(fig_zona, use_container_width=True)
+
+    with p_col3:
+        if not df_rem_tab.empty and 'SUPERVISOR' in df_rem_tab.columns:
+            df_part_sup = df_rem_tab.groupby('SUPERVISOR').size().reset_index(name='CANTIDAD').sort_values('CANTIDAD', ascending=True)
+            fig_sup = px.bar(df_part_sup, x='CANTIDAD', y='SUPERVISOR', orientation='h', title="Participación por Supervisor", text_auto=',.0f', color_discrete_sequence=['#D97706'])
+            fig_sup.update_layout(height=350, template="plotly_white")
+            st.plotly_chart(fig_sup, use_container_width=True)
 
 with tab3:
     st.subheader("Evaluación de Desempeño por Plaza y Jefatura Zonal")
