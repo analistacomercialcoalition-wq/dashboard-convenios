@@ -352,19 +352,74 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 ])
 
 with tab1:
-    st.subheader("💵 Monto Neto Total Desembolsado por Periodo")
+    st.subheader("💵 Evolución Diaria y Curva Ejecutiva de Producción (Millones de Soles)")
+    
+    if not df_flt_prod.empty and df_flt_prod['FECHA_DESEMBOLSO_DT'].notna().any():
+        df_diario_prod = df_flt_prod.groupby(df_flt_prod['FECHA_DESEMBOLSO_DT'].dt.date)['NETO'].sum().reset_index()
+        df_diario_prod = df_diario_prod.sort_values('FECHA_DESEMBOLSO_DT')
+        df_diario_prod['FECHA_STR'] = pd.to_datetime(df_diario_prod['FECHA_DESEMBOLSO_DT']).dt.strftime('%d %b')
+        df_diario_prod['MILLONES'] = df_diario_prod['NETO'] / 1e6
+        df_diario_prod['FMT_M'] = df_diario_prod['MILLONES'].apply(lambda x: f"{x:,.1f}" if x > 0 else "0")
+
+        # Generación de meta ejecutiva por día (2.9M objetivo, 1.3M en sábados)
+        metas_meta_l = []
+        for d in pd.to_datetime(df_diario_prod['FECHA_DESEMBOLSO_DT']):
+            is_sabado = (d.dayofweek == 5)
+            metas_meta_l.append(1.3 if is_sabado else 2.9)
+        df_diario_prod['META_MILLONES'] = metas_meta_l
+
+        fig_prod_dual = go.Figure()
+
+        # Curva de Meta Coalition (Superior - Estilo Referencia)
+        fig_prod_dual.add_trace(go.Scatter(
+            x=df_diario_prod['FECHA_STR'],
+            y=df_diario_prod['META_MILLONES'],
+            mode='lines+markers+text',
+            name='META COALITION',
+            text=[f"{m:,.1f}" for m in df_diario_prod['META_MILLONES']],
+            textposition='top center',
+            line=dict(color='#0F172A', width=3.5, shape='spline'),
+            marker=dict(size=8, color='#0F172A'),
+            fill='tozeroy',
+            fillcolor='rgba(15, 23, 42, 0.08)'
+        ))
+
+        # Curva de Avance Coalition (Real en Millones de Soles)
+        fig_prod_dual.add_trace(go.Scatter(
+            x=df_diario_prod['FECHA_STR'],
+            y=df_diario_prod['MILLONES'],
+            mode='lines+markers+text',
+            name='AVANCE COALITION',
+            text=df_diario_prod['FMT_M'],
+            textposition='top center',
+            line=dict(color='#94A3B8', width=3.5, dash='dash', shape='spline'),
+            marker=dict(size=8, color='#94A3B8')
+        ))
+
+        fig_prod_dual.update_layout(
+            title="Curva Ejecutiva Diaria: Avance vs Meta de Producción (M S/)",
+            xaxis_title="Fecha de Desembolso",
+            yaxis_title="Millones de Soles (M S/)",
+            height=500,
+            template="plotly_white",
+            showlegend=True,
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0)
+        )
+        st.plotly_chart(fig_prod_dual, use_container_width=True)
+    else:
+        st.info("No hay suficientes registros de desembolso diario para graficar la curva ejecutiva.")
+
+    st.markdown("---")
     if not df_mensual.empty:
         fig_bar = px.bar(
             df_mensual, x='AÑO_MES_DESEMBOLSO', y='MONTO_TOTAL_NETO', text='MONTO_TOTAL_NETO',
-            title="Evolución del Monto Neto Total Desembolsado (S/)",
+            title="Evolución del Monto Neto Total Desembolsado por Mes (S/)",
             labels={'AÑO_MES_DESEMBOLSO': 'Periodo Desembolso', 'MONTO_TOTAL_NETO': 'Monto Total Neto (S/)'},
             color_discrete_sequence=['#0F172A']
         )
         fig_bar.update_traces(texttemplate='S/ %{text:,.0f}', textposition='outside')
-        fig_bar.update_layout(height=500, xaxis_tickangle=-45, template="plotly_white")
+        fig_bar.update_layout(height=450, xaxis_tickangle=-45, template="plotly_white")
         st.plotly_chart(fig_bar, use_container_width=True)
-    else:
-        st.info("No se encontraron registros de producción con los filtros seleccionados.")
 
 with tab2:
     st.subheader("📦 Control General de Remesas (Solicitudes)")
@@ -388,7 +443,6 @@ with tab2:
 
     st.markdown("---")
 
-    # 1. Gráfico de Barras Mensual Original
     if not df_rem_tab.empty:
         df_rem_mensual = df_rem_tab.groupby('AÑO_MES_SOLICITUD').size().reset_index(name='CANTIDAD_SOLICITUDES')
         df_rem_mensual = df_rem_mensual[df_rem_mensual['AÑO_MES_SOLICITUD'] != ''].sort_values('AÑO_MES_SOLICITUD')
@@ -405,7 +459,6 @@ with tab2:
 
     st.markdown("---")
 
-    # 2. Gráfico de Líneas Diario con Meta de 90 Ops y Torta de Estados
     col_r1, col_r2 = st.columns([2, 1])
 
     with col_r1:
@@ -419,20 +472,25 @@ with tab2:
                 x=df_diario_rem['FECHA_STR'],
                 y=df_diario_rem['CANTIDAD'],
                 mode='lines+markers+text',
-                name='Remesas',
+                name='Remesas Diarias',
                 text=df_diario_rem['CANTIDAD'],
                 textposition='top center',
-                line=dict(color='#16A34A', width=3, dash='dash'),
-                marker=dict(size=8, color='#16A34A'),
+                line=dict(color='#16A34A', width=3.5, shape='spline'),
+                marker=dict(size=9, color='#16A34A', line=dict(color='#FFFFFF', width=1.5)),
                 fill='tozeroy',
-                fillcolor='rgba(22, 163, 74, 0.1)'
+                fillcolor='rgba(22, 163, 74, 0.12)'
             ))
             fig_rem_line.add_hline(
-                y=90, line_dash="dash", line_color="black", line_width=2,
-                annotation_text="Meta: 90 Ops", annotation_position="top left"
+                y=90, 
+                line_dash="dash", 
+                line_color="#0F172A", 
+                line_width=2.5,
+                annotation_text="🎯 Meta Ejecutiva: 90 Ops", 
+                annotation_position="top left",
+                annotation=dict(font_size=12, font_color="#0F172A", bgcolor="#FEF3C7", borderpad=4)
             )
             fig_rem_line.update_layout(
-                title="Ingreso de Remesas por Días (Fecha de Solicitud)",
+                title="Curva de Ingreso de Remesas por Día (Tendencia Ejecutiva)",
                 xaxis_title="Fecha de Solicitud", yaxis_title="N° de Operaciones",
                 height=450, template="plotly_white", showlegend=True,
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0)
@@ -456,7 +514,6 @@ with tab2:
     st.markdown("---")
     st.subheader("📊 Participación y Distribución de Remesas")
 
-    # 3 Gráficos de Participación Adicionales: Territorial, Zonal y Supervisor
     p_col1, p_col2, p_col3 = st.columns(3)
 
     with p_col1:
@@ -497,7 +554,9 @@ with tab3:
             st.plotly_chart(fig_jefe, use_container_width=True)
 
 with tab4:
-    st.subheader("🎯 Reporte de Venta y Metas por Línea de Supervisión")
+    st.subheader("🎯 Reporte de Venta, Remesas y Metas por Línea de Supervisión")
+    
+    # 1. Producción para supervisores (con los filtros de producción de la app)
     if not df_flt_prod.empty and 'SUPERVISOR' in df_flt_prod.columns:
         df_prod_sup = df_flt_prod.groupby('SUPERVISOR').agg(
             OPERACIONES_DESEMBOLSA=('NETO', 'count'),
@@ -505,6 +564,12 @@ with tab4:
         ).reset_index()
     else:
         df_prod_sup = pd.DataFrame(columns=['SUPERVISOR', 'OPERACIONES_DESEMBOLSA', 'MONTO_DESEMBOLSADO'])
+
+    # 2. Remesas ingresadas por supervisor (filtradas por el mes de remesa seleccionado)
+    if not df_remesas.empty and 'SUPERVISOR' in df_remesas.columns:
+        df_rem_sup = df_remesas.groupby('SUPERVISOR').size().reset_index(name='REMESAS_INGRESADAS')
+    else:
+        df_rem_sup = pd.DataFrame(columns=['SUPERVISOR', 'REMESAS_INGRESADAS'])
 
     df_metas_flt = df_metas_oficial.copy()
     if sel_territorial != "TODOS":
@@ -519,8 +584,11 @@ with tab4:
         df_metas_flt = df_metas_flt[df_metas_flt['SUPERVISOR'] == sel_sup]
 
     df_reporte = pd.merge(df_metas_flt, df_prod_sup, on='SUPERVISOR', how='left')
+    df_reporte = pd.merge(df_reporte, df_rem_sup, on='SUPERVISOR', how='left')
+    
     df_reporte['OPERACIONES_DESEMBOLSA'] = df_reporte['OPERACIONES_DESEMBOLSA'].fillna(0).astype(int)
     df_reporte['MONTO_DESEMBOLSADO'] = df_reporte['MONTO_DESEMBOLSADO'].fillna(0.0)
+    df_reporte['REMESAS_INGRESADAS'] = df_reporte['REMESAS_INGRESADAS'].fillna(0).astype(int)
 
     df_reporte['% Cumplimiento Ops'] = np.where(
         df_reporte['META DE OPERACIONES'] > 0,
@@ -537,12 +605,13 @@ with tab4:
 
     df_reporte_final = df_reporte[[
         'SUPERVISOR', 'ESTADO_SUP', 'PLAZA', 'JEFE ZONAL', 'TERRITORIAL',
-        'META DE OPERACIONES', 'OPERACIONES_DESEMBOLSA', '% Cumplimiento Ops',
+        'META DE OPERACIONES', 'OPERACIONES_DESEMBOLSA', 'REMESAS_INGRESADAS', '% Cumplimiento Ops',
         'META DESEMBOLSO', 'MONTO_DESEMBOLSADO', '% Cumplimiento Monto'
     ]].rename(columns={
         'SUPERVISOR': 'Supervisor', 'ESTADO_SUP': 'Estado', 'PLAZA': 'Plaza / Zona',
         'JEFE ZONAL': 'Jefe Zonal', 'TERRITORIAL': 'Territorial',
         'META DE OPERACIONES': 'Meta de Operaciones', 'OPERACIONES_DESEMBOLSA': 'Ops Desembolsadas',
+        'REMESAS_INGRESADAS': 'Remesas Ingresadas',
         '% Cumplimiento Ops': '% Cumplimiento Ops',
         'META DESEMBOLSO': 'Meta Desembolso (S/)', 'MONTO_DESEMBOLSADO': 'Monto Desembolsado (S/)',
         '% Cumplimiento Monto': '% Cumplimiento Monto'
@@ -562,6 +631,7 @@ with tab4:
         ).format({
             'Meta de Operaciones': '{:,.0f}',
             'Ops Desembolsadas': '{:,.0f}',
+            'Remesas Ingresadas': '{:,.0f}',
             '% Cumplimiento Ops': '{:.0f}%',
             'Meta Desembolso (S/)': formato_compacto_limpio,
             'Monto Desembolsado (S/)': formato_compacto_limpio,
