@@ -41,7 +41,7 @@ CREDENCIALES_USUARIOS = {
         "territorial": "TODAS"
     },
     "cecilia.lopez@coalition.com.pe": {
-        "password": "cecilia2026",
+        "password": "12345678",
         "territorial": "CECILIA LOPEZ"
     }
 }
