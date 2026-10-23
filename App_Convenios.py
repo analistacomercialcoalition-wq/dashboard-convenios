@@ -820,9 +820,9 @@ with tab6:
             df_pivot = df_pivot[meses_cols].copy()
             df_pivot['Promedio'] = df_pivot[meses_cols].mean(axis=1)
 
-            # Cálculo de Cuartiles basados en la columna Promedio (Q1 = Mejores, Q4 = Menores)
+            # Cuartil 1 = Mayor rendimiento (Top), Cuartil 4 = Bajo
             if len(df_pivot) >= 4:
-                df_pivot['Cuartil'] = pd.qcut(df_pivot['Promedio'].rank(method='first'), 4, labels=['Cuartil 1 (Top)', 'Cuartil 2', 'Cuartil 3', 'Cuartil 4 (Bajo)'])
+                df_pivot['Cuartil'] = pd.qcut(df_pivot['Promedio'].rank(method='first', ascending=False), 4, labels=['Cuartil 1 (Top)', 'Cuartil 2', 'Cuartil 3', 'Cuartil 4 (Bajo)'])
             else:
                 df_pivot['Cuartil'] = 'Cuartil 1 (Top)'
 
@@ -844,18 +844,23 @@ with tab6:
         if not df_dot_flt.empty:
             st.markdown(f"**Total Personal Activo Filtrado:** `{len(df_dot_flt)}` colaboradores")
             
-            cols_a_formatear = [c for c in ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Setiembre', 'Octubre', 'Promedio'] if c in df_dot_flt.columns]
-            
-            def formato_celda_dotacion(val):
-                if isinstance(val, (int, float)):
-                    if val == 0:
-                        return 'background-color: #FEE2E2; color: #991B1B; font-weight: bold;'
-                    else:
-                        return formato_compacto_limpio(val)
-                return val
+            # Ordenar de MAYOR a MENOR según el Promedio
+            if 'Promedio' in df_dot_flt.columns:
+                df_dot_flt = df_dot_flt.sort_values(by='Promedio', ascending=False).reset_index(drop=True)
 
-            formatos_dict = {col: formato_celda_dotacion for col in cols_a_formatear}
-            styled_dot = df_dot_flt.style.format(formatos_dict)
+            cols_a_formatear = [c for c in ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Setiembre', 'Octubre', 'Promedio'] if c in df_dot_flt.columns]
+
+            # Función para pintar en rojo suave cuando sea S/ 0.00
+            def resaltar_ceros(val):
+                if isinstance(val, (int, float)) and val == 0:
+                    return 'background-color: #FEE2E2; color: #991B1B; font-weight: bold;'
+                return ''
+
+            styled_dot = df_dot_flt.style.map(
+                resaltar_ceros, subset=cols_a_formatear
+            ).format(
+                {col: formato_compacto_limpio for col in cols_a_formatear}
+            )
             
             st.dataframe(styled_dot, use_container_width=True)
         else:
