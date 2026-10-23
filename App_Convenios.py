@@ -849,31 +849,30 @@ with tab6:
 
             cols_a_formatear = [c for c in ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Setiembre', 'Octubre', 'Promedio'] if c in df_dot_flt.columns]
 
-            def resaltar_ceros(val):
-                if isinstance(val, (int, float)) and val == 0:
-                    return 'background-color: #FEE2E2; color: #991B1B; font-weight: bold;'
-                return ''
-
-            styled_dot = df_dot_flt.style.map(
-                resaltar_ceros, subset=cols_a_formatear
-            ).format(
-                {col: formato_compacto_limpio for col in cols_a_formatear}
-            )
-
-            # Configuraciones de columna para fijar la primera columna de Asesor y achicar los meses
+            # Configuración de columnas nativa con DNI y Promotor fijados a la izquierda
             col_cfg = {}
-            col_asesor_nom = [c for c in df_dot_flt.columns if 'ASESOR' in c.upper()]
+            
+            cols_dni_dot = [c for c in df_dot_flt.columns if 'DNI' in c.upper()]
+            if cols_dni_dot:
+                col_cfg[cols_dni_dot[0]] = st.column_config.TextColumn(
+                    label="DNI",
+                    width="small",
+                    pinned=True
+                )
+
+            col_asesor_nom = [c for c in df_dot_flt.columns if 'ASESOR' in c.upper() or 'PROMOTOR' in c.upper()]
             if col_asesor_nom:
                 col_cfg[col_asesor_nom[0]] = st.column_config.TextColumn(
-                    label=col_asesor_nom[0],
+                    label="PROMOTOR",
                     width="medium",
-                    pinned=True  # Columna fija (Sticky)
+                    pinned=True
                 )
 
             for col_m in cols_a_formatear:
-                col_cfg[col_m] = st.column_config.Column(
+                col_cfg[col_m] = st.column_config.NumberColumn(
                     label=col_m,
-                    width="small"  # Columnas achicadas/compactas
+                    format="S/ %.2f",
+                    width="small"
                 )
 
             if 'Cuartil' in df_dot_flt.columns:
@@ -882,7 +881,7 @@ with tab6:
                     width="small"
                 )
 
-            st.dataframe(styled_dot, column_config=col_cfg, use_container_width=True)
+            st.dataframe(df_dot_flt, column_config=col_cfg, use_container_width=True, hide_index=True)
         else:
             st.info("No se encontraron colaboradores en estado ACTIVO que coincidan con la combinación de filtros seleccionados.")
     else:
