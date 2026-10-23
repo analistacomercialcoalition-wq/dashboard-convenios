@@ -194,32 +194,12 @@ def cargar_datos_corporativos():
     for c in ['SUPERVISOR', 'ESTADO_SUP', 'PLAZA', 'JEFE ZONAL', 'TERRITORIAL']:
         df_metas_oficial[c] = df_metas_oficial[c].astype(str).str.strip().str.upper()
 
-    # 3. Dotación con respaldo a prueba de fallos
-    df_dotacion = pd.DataFrame()
-    posibles_urls = [
-        f"https://docs.google.com/spreadsheets/d/{base_id}/gviz/tq?tqx=out:csv&sheet=DOTACION",
-        f"https://docs.google.com/spreadsheets/d/{base_id}/gviz/tq?tqx=out:csv&sheet=DOTACI%C3%93N"
-    ]
-
-    for url in posibles_urls:
-        try:
-            df_temp = pd.read_csv(url, dtype=str)
-            if df_temp is not None and not df_temp.empty and len(df_temp.columns) > 1:
-                df_dotacion = df_temp.copy()
-                break
-        except Exception:
-            continue
-
-    if df_dotacion is not None and not df_dotacion.empty:
-        df_dotacion.columns = df_dotacion.columns.astype(str).str.strip()
-        for col in df_dotacion.columns:
-            df_dotacion[col] = df_dotacion[col].fillna('').astype(str).str.strip().str.upper()
-    else:
-        df_dotacion = pd.DataFrame(columns=['DNI', 'PROMOTOR', 'ESTADO', 'SUPERVISOR', 'JEFE ZONAL', 'PLAZA'])
+    # DOTACIÓN ELIMINADA DE LA CARGA WEB (Se define segura vacía)
+    df_dotacion = pd.DataFrame(columns=['ASESOR CORRECTO', 'DNI', 'ESTADO', 'SUPERVISOR', 'JEFE ZONAL', 'PLAZA'])
 
     return df, df_metas_oficial, df_dotacion
 
-with st.spinner("Sincronizando matriz corporativa Coalition y Dotación..."):
+with st.spinner("Sincronizando matriz corporativa Coalition..."):
     df_base, df_metas_oficial, df_dotacion = cargar_datos_corporativos()
 
 col_logo, col_tit = st.columns([1, 5])
@@ -230,7 +210,7 @@ with col_logo:
         st.markdown("## 🦁")
 with col_tit:
     st.title("CONVENIOS COALITION")
-    st.markdown("##### **Matriz Gerencial de Colocaciones, Remesas, Dotación y Modelo Predictivo Estacional**")
+    st.markdown("##### **Matriz Gerencial de Colocaciones, Remesas y Modelo Predictivo Estacional**")
 
 st.markdown("---")
 
@@ -366,12 +346,12 @@ df_mensual = df_flt_prod.groupby('AÑO_MES_DESEMBOLSO').agg(
     OPERACIONES=('NETO', 'count')
 ).reset_index() if not df_flt_prod.empty else pd.DataFrame()
 
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+# 5 Pestañas activas (sin riesgo de dotación)
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📊 Producción Total por Mes", 
     "📦 Remesas (Volumen por Fecha de Solicitud)", 
     "🏆 Red Comercial & Ranking", 
     "🎯 Reporte de Venta por Supervisor",
-    "👥 Dotación & Avance Mensual (Ene-Oct)",
     "🎲 Monte Carlo (Estacionalidad Perú)"
 ])
 
@@ -528,73 +508,6 @@ with tab4:
         st.dataframe(styled_df, use_container_width=True)
 
 with tab5:
-    st.subheader("👥 Dotación Comercial y Producción Mensual por Asesor (S/ Netos)")
-    if not df_dotacion.empty:
-        df_dot_flt = df_dotacion.copy()
-        cols_dot = {str(c).upper(): c for c in df_dot_flt.columns}
-        col_dot_t = next((cols_dot[k] for k in cols_dot if 'TERRITORIAL' in k), None)
-        col_dot_p = next((cols_dot[k] for k in cols_dot if 'PLAZA' in k or 'ZONA' in k), None)
-        col_dot_j = next((cols_dot[k] for k in cols_dot if 'JEFE' in k), None)
-        col_dot_s = next((cols_dot[k] for k in cols_dot if 'SUPERVISOR' in k), None)
-        col_dot_a = next((cols_dot[k] for k in cols_dot if any(key in k for key in ['PROMOTOR', 'ASESOR', 'NOMBRE', 'DNI', 'PERSONAL'])), None)
-
-        if sel_territorial != "TODOS" and col_dot_t:
-            df_dot_flt = df_dot_flt[df_dot_flt[col_dot_t] == sel_territorial]
-        if sel_plaza != "TODAS" and col_dot_p:
-            df_dot_flt = df_dot_flt[df_dot_flt[col_dot_p] == sel_plaza]
-        if sel_jefe != "TODOS" and col_dot_j:
-            df_dot_flt = df_dot_flt[df_dot_flt[col_dot_j] == sel_jefe]
-        if sel_sup != "TODOS" and col_dot_s:
-            df_dot_flt = df_dot_flt[df_dot_flt[col_dot_s] == sel_sup]
-        if sel_asesor != "TODOS" and col_dot_a:
-            df_dot_flt = df_dot_flt[df_dot_flt[col_dot_a] == sel_asesor]
-
-        df_desem_matriz = df_base[
-            (df_base['ESTADO'] == 'DESEMBOLSADO') & 
-            (df_base['MES_DESEMBOLSO_NUM'] >= 1) & 
-            (df_base['MES_DESEMBOLSO_NUM'] <= 10)
-        ]
-
-        if 'ASESOR CORRECTO' in df_desem_matriz.columns:
-            pivot_prod = df_desem_matriz.pivot_table(
-                index='ASESOR CORRECTO', columns='MES_DESEMBOLSO_NUM', values='NETO', aggfunc='sum'
-            ).fillna(0).reset_index()
-        else:
-            pivot_prod = pd.DataFrame(columns=['ASESOR CORRECTO'])
-
-        nombres_meses = {
-            1: 'Enero (S/)', 2: 'Febrero (S/)', 3: 'Marzo (S/)', 4: 'Abril (S/)',
-            5: 'Mayo (S/)', 6: 'Junio (S/)', 7: 'Julio (S/)', 8: 'Agosto (S/)',
-            9: 'Setiembre (S/)', 10: 'Octubre (S/)'
-        }
-
-        for num_m, nom_m in nombres_meses.items():
-            if num_m in pivot_prod.columns:
-                pivot_prod = pivot_prod.rename(columns={num_m: nom_m})
-            else:
-                pivot_prod[nom_m] = 0.0
-
-        col_asesor_key = col_dot_a if col_dot_a else df_dot_flt.columns[0]
-        df_dot_unida = pd.merge(df_dot_flt, pivot_prod, left_on=col_asesor_key, right_on='ASESOR CORRECTO', how='left')
-
-        cols_meses_lista = list(nombres_meses.values())
-        for c in cols_meses_lista:
-            df_dot_unida[c] = df_dot_unida[c].fillna(0.0)
-
-        df_dot_unida['Promedio Mensual (S/)'] = df_dot_unida[cols_meses_lista].mean(axis=1)
-        if 'ASESOR CORRECTO' in df_dot_unida.columns and col_asesor_key != 'ASESOR CORRECTO':
-            df_dot_unida = df_dot_unida.drop(columns=['ASESOR CORRECTO'])
-
-        df_dot_unida = df_dot_unida.sort_values('Promedio Mensual (S/)', ascending=False).reset_index(drop=True)
-        formatos_dict = {c: formato_compacto_limpio for c in cols_meses_lista}
-        formatos_dict['Promedio Mensual (S/)'] = formato_compacto_limpio
-
-        styled_dotacion = df_dot_unida.style.format(formatos_dict)
-        st.dataframe(styled_dotacion, use_container_width=True)
-    else:
-        st.warning("⚠️ No se pudieron cargar los datos de Dotación.")
-
-with tab6:
     st.subheader("🎲 Motor Estocástico Monte Carlo (100,000 Escenarios - Convenios Perú)")
     base_mensual_historica = df_mensual['MONTO_TOTAL_NETO'].mean() if not df_mensual.empty else 28500000
     std_mensual_historica = df_mensual['MONTO_TOTAL_NETO'].std() if (not df_mensual.empty and len(df_mensual) > 1) else base_mensual_historica * 0.12
