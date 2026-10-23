@@ -74,24 +74,52 @@ posibles_logos = ["Convenios Coalition.png", "Convenios Coalition.jpg", "logo.pn
 logo_encontrado = next((img for img in posibles_logos if os.path.exists(img)), None)
 
 # ==========================================
-# CABECERA CON LOGO Y TÍTULO
+# SISTEMA DE LOGIN DE PÁGINA COMPLETA
 # ==========================================
-col_logo, col_tit = st.columns([1, 5])
+if 'autenticado' not in st.session_state:
+    st.session_state.autenticado = False
+if 'usuario_correo' not in st.session_state:
+    st.session_state.usuario_correo = ""
 
-with col_logo:
-    if logo_encontrado:
-        st.image(logo_encontrado, width=130)
-    else:
-        st.markdown("## 🦁")
+CREDENCIALES_USUARIOS = {
+    "luigi.socca@coalition.com.pe": {
+        "password": "45775003",
+        "territorial": "TODAS"
+    }
+}
 
-with col_tit:
-    st.title("CONVENIOS COALITION")
-    st.markdown("##### **Matriz Gerencial de Colocaciones, Remesas y Modelo Predictivo Estacional**")
-
-st.markdown("---")
+if not st.session_state.autenticado:
+    st.markdown("<br><br>", unsafe_allow_html=True)
+    col_login_a, col_login_b, col_login_c = st.columns([1, 2, 1])
+    
+    with col_login_b:
+        st.markdown("""
+            <div style="text-align: center; background-color: #0F172A; padding: 30px; border-radius: 15px; box-shadow: 0px 4px 15px rgba(0,0,0,0.2);">
+                <h1 style="color: #F59E0B; margin-bottom: 0;">🦁 CONVENIOS COALITION</h1>
+                <h4 style="color: #F8FAFC; margin-top: 5px;">Portal Gerencial de Control & Analytics</h4>
+            </div>
+        """, unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        with st.form("form_login"):
+            st.subheader("🔐 Iniciar Sesión en el Sistema")
+            input_correo = st.text_input("Correo Corporativo:", value="").strip().lower()
+            input_pass = st.text_input("Contraseña:", type="password", value="").strip()
+            btn_ingresar = st.form_submit_button("🚀 Ingresar al Dashboard", use_container_width=True)
+            
+            if btn_ingresar:
+                usuario_info = CREDENCIALES_USUARIOS.get(input_correo, None)
+                if usuario_info and usuario_info["password"] == input_pass:
+                    st.session_state.autenticado = True
+                    st.session_state.usuario_correo = input_correo
+                    st.success("✅ Acceso verificado. Cargando entorno ejecutivo...")
+                    st.rerun()
+                else:
+                    st.error("⚠️ Correo o contraseña incorrectos. Verifique sus credenciales.")
+    st.stop()
 
 # ==========================================
-# 1. CARGA Y LIMPIEZA DE DATOS (MATRIZ PRINCIPAL Y METAS OFICIALES)
+# CARGA Y LIMPIEZA DE DATOS (MATRIZ, METAS Y DOTACIÓN)
 # ==========================================
 @st.cache_data(ttl=600)
 def cargar_datos_corporativos():
@@ -112,7 +140,7 @@ def cargar_datos_corporativos():
         if col in df.columns:
             df[col] = df[col].fillna('').astype(str).str.strip().str.upper()
 
-    # Parseo de Fecha de Solicitud (DD/MM/YYYY)
+    # Parseo de Fecha de Solicitud
     col_sol = [c for c in df.columns if 'SOLICITUD' in c.upper()][0]
     df['FECHA_SOLICITUD_DT'] = pd.to_datetime(df[col_sol], format='%d/%m/%Y', errors='coerce')
     mask_null_sol = df['FECHA_SOLICITUD_DT'].isna() & (df[col_sol] != '')
@@ -122,7 +150,7 @@ def cargar_datos_corporativos():
         )
     df['AÑO_MES_SOLICITUD'] = df['FECHA_SOLICITUD_DT'].dt.to_period('M').astype(str)
 
-    # Parseo de Fecha de Desembolso (DD/MM/YYYY)
+    # Parseo de Fecha de Desembolso
     col_des = [c for c in df.columns if 'DESEMBOLSO' in c.upper()][0]
     df['FECHA_DESEMBOLSO_DT'] = pd.to_datetime(df[col_des], format='%d/%m/%Y', errors='coerce')
     mask_null_des = df['FECHA_DESEMBOLSO_DT'].isna() & (df[col_des] != '')
@@ -131,15 +159,15 @@ def cargar_datos_corporativos():
             df.loc[mask_null_des, col_des], dayfirst=True, errors='coerce'
         )
     df['AÑO_MES_DESEMBOLSO'] = df['FECHA_DESEMBOLSO_DT'].dt.to_period('M').astype(str)
+    df['MES_DESEMBOLSO_NUM'] = df['FECHA_DESEMBOLSO_DT'].dt.month
 
     df = df[df['FECHA_SOLICITUD_DT'].notna()]
     
-    # ID de desduplicación exacta
     cols_id = [c for c in df.columns if any(k in c.upper() for k in ['EXPEDIE', 'DNI', 'CREDITO', 'OPERACION'])]
     df['ID_UNICO'] = df[cols_id[0]].astype(str).str.strip() if cols_id else df.index.astype(str)
     df = df.drop_duplicates(subset=['ID_UNICO', 'AÑO_MES_SOLICITUD'], keep='first')
 
-    # TABLA OFICIAL DE METAS POR SUPERVISOR PROVISTA POR LUIGI
+    # TABLA OFICIAL DE METAS POR SUPERVISOR
     datos_metas = [
         ["PAOLA PEREZ", "ACTIVO", "LIMA", "FLAVIA LAURA", "CECILIA LOPEZ", 28, 1290000],
         ["FRANK SANTAMARIA", "ACTIVO", "JAEN", "JOSE VALDIVIEZO", "CECILIA LOPEZ", 20, 950000],
@@ -222,10 +250,37 @@ def cargar_datos_corporativos():
     for c in ['SUPERVISOR', 'ESTADO_SUP', 'PLAZA', 'JEFE ZONAL', 'TERRITORIAL']:
         df_metas_oficial[c] = df_metas_oficial[c].str.strip().str.upper()
 
-    return df, df_metas_oficial
+    # Carga de la pestaña DOTACIÓN
+    sheet_url_dotacion = "https://docs.google.com/spreadsheets/d/1IBvyIN5H1jYrwEAOD9E5nTCpaBLqxD109HMKCW0Ezt8/gviz/tq?tqx=out:csv&sheet=DOTACION"
+    try:
+        df_dotacion = pd.read_csv(sheet_url_dotacion, dtype=str)
+        df_dotacion.columns = df_dotacion.columns.str.strip()
+        for col in df_dotacion.columns:
+            df_dotacion[col] = df_dotacion[col].fillna('').astype(str).str.strip().str.upper()
+    except Exception:
+        df_dotacion = pd.DataFrame()
 
-with st.spinner("Sincronizando matriz corporativa Coalition y Metas Oficiales..."):
-    df_base, df_metas_oficial = cargar_datos_corporativos()
+    return df, df_metas_oficial, df_dotacion
+
+with st.spinner("Sincronizando matriz corporativa Coalition y Dotación..."):
+    df_base, df_metas_oficial, df_dotacion = cargar_datos_corporativos()
+
+# ==========================================
+# HEADER EXECUTIVO DEL DASHBOARD
+# ==========================================
+col_logo, col_tit = st.columns([1, 5])
+
+with col_logo:
+    if logo_encontrado:
+        st.image(logo_encontrado, width=130)
+    else:
+        st.markdown("## 🦁")
+
+with col_tit:
+    st.title("CONVENIOS COALITION")
+    st.markdown("##### **Matriz Gerencial de Colocaciones, Remesas, Dotación y Modelo Predictivo Estacional**")
+
+st.markdown("---")
 
 def obtener_opciones_limpias(df_in, col_name):
     if col_name in df_in.columns:
@@ -234,35 +289,23 @@ def obtener_opciones_limpias(df_in, col_name):
     return []
 
 # ==========================================
-# 2. SISTEMA DE AUTENTICACIÓN Y SEGURIDAD (SOLO LUIGI SOCCA)
+# NAVEGACIÓN Y ESTRUCTURA BARRA LATERAL
 # ==========================================
 if logo_encontrado:
     st.sidebar.image(logo_encontrado, use_column_width=True)
 
 st.sidebar.markdown("<h2 style='color: #D97706; text-align: center;'>CONVENIOS COALITION</h2>", unsafe_allow_html=True)
+st.sidebar.markdown(f"👤 **Usuario:** {st.session_state.usuario_correo}")
+
+if st.sidebar.button("🔒 Cerrar Sesión", use_container_width=True):
+    st.session_state.autenticado = False
+    st.session_state.usuario_correo = ""
+    st.rerun()
+
 st.sidebar.markdown("---")
-st.sidebar.subheader("🔐 Credenciales de Acceso")
+st.sidebar.subheader("🏢 Estructura Comercial")
 
-CREDENCIALES_USUARIOS = {
-    "luigi.socca@coalition.com.pe": {
-        "password": "45775003",
-        "territorial": "TODAS"
-    }
-}
-
-input_correo = st.sidebar.text_input("Correo Corporativo:", value="").strip().lower()
-input_pass = st.sidebar.text_input("Contraseña:", type="password", value="").strip()
-
-if not input_correo or not input_pass:
-    st.sidebar.warning("⚠️ Por favor ingrese su correo y contraseña corporativa para acceder al sistema.")
-    st.stop()
-
-usuario_info = CREDENCIALES_USUARIOS.get(input_correo, None)
-if usuario_info is None or usuario_info["password"] != input_pass:
-    st.sidebar.error("⚠️ Correo o contraseña incorrectos.")
-    st.stop()
-
-territorial_asignada = usuario_info["territorial"]
+territorial_asignada = CREDENCIALES_USUARIOS[st.session_state.usuario_correo]["territorial"]
 df_flt_sidebar = df_base.copy()
 
 if territorial_asignada != "TODAS":
@@ -271,10 +314,7 @@ if territorial_asignada != "TODAS":
 else:
     st.sidebar.success("👑 Acceso Gerencial Total (Todas las Territoriales)")
 
-st.sidebar.markdown("---")
-st.sidebar.subheader("🏢 Estructura Comercial")
-
-# 1. TERRITORIAL
+# FILTROS SIDEBAR
 col_territorial = 'TERRITORIAL' if 'TERRITORIAL' in df_base.columns else None
 if territorial_asignada == "TODAS":
     territoriales = ["TODOS"] + (obtener_opciones_limpias(df_flt_sidebar, col_territorial) if col_territorial else [])
@@ -285,32 +325,27 @@ else:
     st.sidebar.selectbox("Territorial", [territorial_asignada], disabled=True)
     sel_territorial = territorial_asignada
 
-# 2. ZONA
 zonas = ["TODAS"] + obtener_opciones_limpias(df_flt_sidebar, 'ZONA')
 sel_zona = st.sidebar.selectbox("Zona", zonas)
 if sel_zona != "TODAS":
     df_flt_sidebar = df_flt_sidebar[df_flt_sidebar['ZONA'] == sel_zona]
 
-# 3. PLAZA
 plazas = ["TODAS"] + obtener_opciones_limpias(df_flt_sidebar, 'PLAZA')
 sel_plaza = st.sidebar.selectbox("Plaza", plazas)
 if sel_plaza != "TODAS":
     df_flt_sidebar = df_flt_sidebar[df_flt_sidebar['PLAZA'] == sel_plaza]
 
-# 4. JEFE ZONAL (ESTRICTO)
 col_jefe_exacta = 'JEFE ZONAL' if 'JEFE ZONAL' in df_base.columns else None
 jefes = ["TODOS"] + (obtener_opciones_limpias(df_flt_sidebar, col_jefe_exacta) if col_jefe_exacta else [])
 sel_jefe = st.sidebar.selectbox("Jefe Zonal", jefes)
 if sel_jefe != "TODOS" and col_jefe_exacta:
     df_flt_sidebar = df_flt_sidebar[df_flt_sidebar[col_jefe_exacta] == sel_jefe]
 
-# 5. SUPERVISOR
 supervisores = ["TODOS"] + obtener_opciones_limpias(df_flt_sidebar, 'SUPERVISOR')
 sel_sup = st.sidebar.selectbox("Supervisor", supervisores)
 if sel_sup != "TODOS" and 'SUPERVISOR' in df_flt_sidebar.columns:
     df_flt_sidebar = df_flt_sidebar[df_flt_sidebar['SUPERVISOR'] == sel_sup]
 
-# 6. ASESOR
 asesores = ["TODOS"] + obtener_opciones_limpias(df_flt_sidebar, 'ASESOR CORRECTO')
 sel_asesor = st.sidebar.selectbox("Asesor", asesores)
 if sel_asesor != "TODOS" and 'ASESOR CORRECTO' in df_flt_sidebar.columns:
@@ -319,7 +354,7 @@ if sel_asesor != "TODOS" and 'ASESOR CORRECTO' in df_flt_sidebar.columns:
 df_flt = df_flt_sidebar.copy()
 
 # ==========================================
-# 3. FILTROS EN ENCABEZADO SUPERIOR
+# FILTROS SUPERIORES TEMPORALES
 # ==========================================
 st.markdown("### 🎛️ Controles Temporales y Estado Operativo")
 f_col1, f_col2, f_col3 = st.columns(3)
@@ -348,14 +383,14 @@ with f_col3:
         default=[]
     )
 
-# --- FILTRADO PRODUCCIÓN (ESTADO + MES DESEMBOLSO) ---
+# PRODUCCIÓN FILTRADA
 df_flt_prod = df_flt.copy()
 if sel_estados_prod:
     df_flt_prod = df_flt_prod[df_flt_prod['ESTADO'].isin(sel_estados_prod)]
 if sel_meses_desembolso:
     df_flt_prod = df_flt_prod[df_flt_prod['AÑO_MES_DESEMBOLSO'].isin(sel_meses_desembolso)]
 
-# --- FILTRADO REMESAS ---
+# REMESAS FILTRADAS
 df_remesas = df_flt.copy()
 if sel_meses_remesa:
     df_remesas = df_remesas[df_remesas['AÑO_MES_SOLICITUD'].isin(sel_meses_remesa)]
@@ -389,13 +424,14 @@ df_mensual = df_flt_prod.groupby('AÑO_MES_DESEMBOLSO').agg(
 ).reset_index() if not df_flt_prod.empty else pd.DataFrame()
 
 # ==========================================
-# 4. ESTRUCTURA DE PESTAÑAS DEL DASHBOARD
+# ESTRUCTURA DE 6 PESTAÑAS DEL DASHBOARD (INCLUYE DOTACIÓN)
 # ==========================================
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "📊 Producción Total por Mes", 
     "📦 Remesas (Volumen por Fecha de Solicitud)", 
     "🏆 Red Comercial & Ranking", 
     "🎯 Reporte de Venta por Supervisor",
+    "👥 Dotación & Avance Mensual (Ene-Oct)",
     "🎲 Monte Carlo (Estacionalidad Perú)"
 ])
 
@@ -498,12 +534,11 @@ with tab3:
             fig_jefe.update_layout(template="plotly_white")
             st.plotly_chart(fig_jefe, use_container_width=True)
 
-# --- PESTAÑA 4: REPORTE DE VENTA ORDENADO Y NUMEROS COMPACTOS ---
+# --- PESTAÑA 4: REPORTE DE VENTA POR SUPERVISOR ---
 with tab4:
     st.subheader("🎯 Reporte de Venta y Metas por Línea de Supervisión")
     st.markdown("Consolidado ordenado jerárquicamente por **% Cumplimiento Ops** (1º) y **% Cumplimiento Monto** (2º) en formato compacto gerencial.")
 
-    # 1. Utilizar df_flt_prod (YA FILTRADO POR MESES DE DESEMBOLSO Y ESTADO SELECCIONADO)
     if not df_flt_prod.empty and 'SUPERVISOR' in df_flt_prod.columns:
         df_prod_sup = df_flt_prod.groupby('SUPERVISOR').agg(
             OPERACIONES_DESEMBOLSA=('NETO', 'count'),
@@ -512,7 +547,6 @@ with tab4:
     else:
         df_prod_sup = pd.DataFrame(columns=['SUPERVISOR', 'OPERACIONES_DESEMBOLSA', 'MONTO_DESEMBOLSADO'])
 
-    # 2. Aplicar los filtros de la barra lateral sobre la tabla de metas oficial
     df_metas_flt = df_metas_oficial.copy()
     if sel_territorial != "TODOS":
         df_metas_flt = df_metas_flt[df_metas_flt['TERRITORIAL'] == sel_territorial]
@@ -525,12 +559,10 @@ with tab4:
     if sel_sup != "TODOS":
         df_metas_flt = df_metas_flt[df_metas_flt['SUPERVISOR'] == sel_sup]
 
-    # 3. Cruzar la tabla de metas con el avance real desembolsado
     df_reporte = pd.merge(df_metas_flt, df_prod_sup, on='SUPERVISOR', how='left')
     df_reporte['OPERACIONES_DESEMBOLSA'] = df_reporte['OPERACIONES_DESEMBOLSA'].fillna(0).astype(int)
     df_reporte['MONTO_DESEMBOLSADO'] = df_reporte['MONTO_DESEMBOLSADO'].fillna(0)
 
-    # 4. Calcular % de cumplimiento
     df_reporte['CUMPLIMIENTO_OPS'] = np.where(
         df_reporte['META DE OPERACIONES'] > 0,
         (df_reporte['OPERACIONES_DESEMBOLSA'] / df_reporte['META DE OPERACIONES']) * 100,
@@ -542,13 +574,11 @@ with tab4:
         0.0
     )
 
-    # 5. ORDENAMIENTO EXPLICITO SOLICITADO: 1º CUMPLIMIENTO_OPS, 2º CUMPLIMIENTO_MONTO (AMBOS DESCENDENTES)
     df_reporte = df_reporte.sort_values(
         by=['CUMPLIMIENTO_OPS', 'CUMPLIMIENTO_MONTO'], 
         ascending=[False, False]
     ).reset_index(drop=True)
 
-    # 6. Reordenar y renombrar la tabla final
     cols_ordenadas = [
         'SUPERVISOR', 'ESTADO_SUP', 'PLAZA', 'JEFE ZONAL', 'TERRITORIAL',
         'META DE OPERACIONES', 'OPERACIONES_DESEMBOLSA', 'CUMPLIMIENTO_OPS',
@@ -568,17 +598,15 @@ with tab4:
         'CUMPLIMIENTO_MONTO': '% Cumplimiento Monto'
     })
 
-    # Función para colorear el semáforo según el porcentaje
     def aplicar_estilo_semaforo(val):
         if val < 80.0:
-            return 'background-color: #FEE2E2; color: #991B1B; font-weight: bold;'  # Rojo
+            return 'background-color: #FEE2E2; color: #991B1B; font-weight: bold;'
         elif val < 100.0:
-            return 'background-color: #FEF3C7; color: #92400E; font-weight: bold;'  # Amarillo tenue
+            return 'background-color: #FEF3C7; color: #92400E; font-weight: bold;'
         else:
-            return 'background-color: #DCFCE7; color: #166534; font-weight: bold;'  # Verde
+            return 'background-color: #DCFCE7; color: #166534; font-weight: bold;'
 
     if not df_reporte_final.empty:
-        # FORMATOS AJUSTADOS A NÚMEROS COMPACTOS Y ENTEROS EN %
         styled_df = df_reporte_final.style.map(
             aplicar_estilo_semaforo, 
             subset=['% Cumplimiento Ops', '% Cumplimiento Monto']
@@ -587,7 +615,7 @@ with tab4:
             'Ops Desembolsadas': '{:,.0f}',
             '% Cumplimiento Ops': '{:,.0f}%',
             'Meta Desembolso (S/)': formato_compacto_limpio,
-            'Monto Desembolsado (S/)': formato_compacto_limpio,
+            'Monto Desembolso (S/)': formato_compacto_limpio,
             '% Cumplimiento Monto': '{:,.0f}%'
         })
 
@@ -601,8 +629,98 @@ with tab4:
     else:
         st.info("No se encontraron registros de metas que coincidan con los filtros comerciales seleccionados.")
 
-# --- PESTAÑA 5: MONTE CARLO ---
+# --- PESTAÑA 5: DOTACIÓN Y PRODUCCIÓN MENSUAL (ENERO A OCTUBRE + PROMEDIO) ---
 with tab5:
+    st.subheader("👥 Dotación Comercial y Producción Mensual por Asesor (S/ Netos)")
+    st.markdown("Matriz de dotación con consolidación de **Monto Neto Desembolsado** de **Enero a Octubre** y cálculo de **Promedio Mensual**.")
+
+    if not df_dotacion.empty:
+        df_dot_flt = df_dotacion.copy()
+
+        # Filtrado por barra lateral en la tabla de Dotación
+        cols_dot = {c.upper(): c for c in df_dot_flt.columns}
+        col_dot_t = next((cols_dot[k] for k in cols_dot if 'TERRITORIAL' in k), None)
+        col_dot_p = next((cols_dot[k] for k in cols_dot if 'PLAZA' in k or 'ZONA' in k), None)
+        col_dot_j = next((cols_dot[k] for k in cols_dot if 'JEFE' in k), None)
+        col_dot_s = next((cols_dot[k] for k in cols_dot if 'SUPERVISOR' in k), None)
+        col_dot_a = next((cols_dot[k] for k in cols_dot if 'ASESOR' in k or 'NOMBRE' in k), None)
+
+        if sel_territorial != "TODOS" and col_dot_t:
+            df_dot_flt = df_dot_flt[df_dot_flt[col_dot_t] == sel_territorial]
+        if sel_plaza != "TODAS" and col_dot_p:
+            df_dot_flt = df_dot_flt[df_dot_flt[col_dot_p] == sel_plaza]
+        if sel_jefe != "TODOS" and col_dot_j:
+            df_dot_flt = df_dot_flt[df_dot_flt[col_dot_j] == sel_jefe]
+        if sel_sup != "TODOS" and col_dot_s:
+            df_dot_flt = df_dot_flt[df_dot_flt[col_dot_s] == sel_sup]
+        if sel_asesor != "TODOS" and col_dot_a:
+            df_dot_flt = df_dot_flt[df_dot_flt[col_dot_a] == sel_asesor]
+
+        # Obtener producción real desembolsada agrupada por Asesor Correcto y Número de Mes (Enero = 1, ..., Octubre = 10)
+        df_desem_matriz = df_base[
+            (df_base['ESTADO'] == 'DESEMBOLSADO') & 
+            (df_base['MES_DESEMBOLSO_NUM'] >= 1) & 
+            (df_base['MES_DESEMBOLSO_NUM'] <= 10)
+        ]
+
+        if 'ASESOR CORRECTO' in df_desem_matriz.columns:
+            pivot_prod = df_desem_matriz.pivot_table(
+                index='ASESOR CORRECTO',
+                columns='MES_DESEMBOLSO_NUM',
+                values='NETO',
+                aggfunc='sum'
+            ).fillna(0).reset_index()
+        else:
+            pivot_prod = pd.DataFrame(columns=['ASESOR CORRECTO'])
+
+        # Mapear los meses de Enero a Octubre
+        nombres_meses = {
+            1: 'Enero (S/)', 2: 'Febrero (S/)', 3: 'Marzo (S/)', 4: 'Abril (S/)',
+            5: 'Mayo (S/)', 6: 'Junio (S/)', 7: 'Julio (S/)', 8: 'Agosto (S/)',
+            9: 'Setiembre (S/)', 10: 'Octubre (S/)'
+        }
+
+        for num_m, nom_m in nombres_meses.items():
+            if num_m in pivot_prod.columns:
+                pivot_prod = pivot_prod.rename(columns={num_m: nom_m})
+            else:
+                pivot_prod[nom_m] = 0.0
+
+        # Identificar columna clave de cruce por asesor en Dotación
+        col_asesor_key = col_dot_a if col_dot_a else df_dot_flt.columns[0]
+
+        df_dot_unida = pd.merge(
+            df_dot_flt, 
+            pivot_prod, 
+            left_on=col_asesor_key, 
+            right_on='ASESOR CORRECTO', 
+            how='left'
+        )
+
+        cols_meses_lista = list(nombres_meses.values())
+        for c in cols_meses_lista:
+            df_dot_unida[c] = df_dot_unida[c].fillna(0.0)
+
+        # Cálculo de Promedio Mensual por Asesor
+        df_dot_unida['Promedio Mensual (S/)'] = df_dot_unida[cols_meses_lista].mean(axis=1)
+
+        if 'ASESOR CORRECTO' in df_dot_unida.columns and col_asesor_key != 'ASESOR CORRECTO':
+            df_dot_unida = df_dot_unida.drop(columns=['ASESOR CORRECTO'])
+
+        # Ordenar descendentemente por Promedio Mensual
+        df_dot_unida = df_dot_unida.sort_values('Promedio Mensual (S/)', ascending=False).reset_index(drop=True)
+
+        # Formatear montos en moneda compacta
+        formatos_dict = {c: formato_compacto_limpio for c in cols_meses_lista}
+        formatos_dict['Promedio Mensual (S/)'] = formato_compacto_limpio
+
+        styled_dotacion = df_dot_unida.style.format(formatos_dict)
+        st.dataframe(styled_dotacion, use_container_width=True)
+    else:
+        st.info("No se pudo cargar la pestaña de Dotación desde el Google Sheet.")
+
+# --- PESTAÑA 6: MONTE CARLO ---
+with tab6:
     st.subheader("🎲 Motor Estocástico Monte Carlo (100,000 Escenarios - Convenios Perú)")
     st.markdown("Proyección basada en el **promedio mensual histórico real** de la matriz, calibrada con la sensibilidad de créditos por planilla (Picos en Noviembre, Diciembre y Julio).")
 
