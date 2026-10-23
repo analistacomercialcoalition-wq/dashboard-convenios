@@ -253,23 +253,29 @@ def cargar_datos_corporativos():
     for c in ['SUPERVISOR', 'ESTADO_SUP', 'PLAZA', 'JEFE ZONAL', 'TERRITORIAL']:
         df_metas_oficial[c] = df_metas_oficial[c].str.strip().str.upper()
 
-    # 3. Carga con Codificación URL Segura para la Pestaña DOTACIÓN
-    posibles_nombres_dotacion = ["DOTACION", "DOTACIÓN", "Dotacion", "Dotación"]
+    # 3. Carga Ultra-segura para DOTACIÓN
     df_dotacion = pd.DataFrame()
+    posibles_urls = [
+        f"https://docs.google.com/spreadsheets/d/{base_id}/gviz/tq?tqx=out:csv&sheet=DOTACION",
+        f"https://docs.google.com/spreadsheets/d/{base_id}/gviz/tq?tqx=out:csv&sheet=DOTACI%C3%93N",
+        f"https://docs.google.com/spreadsheets/d/{base_id}/export?format=csv&sheet=DOTACION",
+        f"https://docs.google.com/spreadsheets/d/{base_id}/export?format=csv&sheet=DOTACI%C3%93N"
+    ]
 
-    for nom in posibles_nombres_dotacion:
+    for url in posibles_urls:
         try:
-            sheet_encoded = urllib.parse.quote(nom)
-            url_dot = f"https://docs.google.com/spreadsheets/d/{base_id}/gviz/tq?tqx=out:csv&sheet={sheet_encoded}"
-            df_temp = pd.read_csv(url_dot, dtype=str)
-            if not df_temp.empty and len(df_temp.columns) > 1:
+            df_temp = pd.read_csv(url, dtype=str)
+            if df_temp is not None and isinstance(df_temp, pd.DataFrame) and not df_temp.empty and len(df_temp.columns) > 1:
                 df_dotacion = df_temp
                 break
         except Exception:
             continue
 
-    if not df_dotacion.empty:
-        df_dotacion.columns = df_dotacion.columns.str.strip()
+    # SANITIZACIÓN DE PANDAS CONTRA NULL/NONE EN DF_DOTACION
+    if df_dotacion is None or not isinstance(df_dotacion, pd.DataFrame) or df_dotacion.empty:
+        df_dotacion = pd.DataFrame(columns=['DNI', 'PROMOTOR', 'ESTADO', 'SUPERVISOR', 'JEFE ZONAL', 'PLAZA'])
+    else:
+        df_dotacion.columns = df_dotacion.columns.astype(str).str.strip()
         for col in df_dotacion.columns:
             df_dotacion[col] = df_dotacion[col].fillna('').astype(str).str.strip().str.upper()
 
@@ -296,7 +302,7 @@ with col_tit:
 st.markdown("---")
 
 def obtener_opciones_limpias(df_in, col_name):
-    if col_name in df_in.columns:
+    if df_in is not None and isinstance(df_in, pd.DataFrame) and col_name in df_in.columns:
         elementos = sorted([x for x in df_in[col_name].dropna().unique() if x not in ['', 'NAN', 'NAT', 'NONE', 'NaT']])
         return elementos
     return []
@@ -642,12 +648,12 @@ with tab4:
     else:
         st.info("No se encontraron registros de metas que coincidan con los filtros comerciales seleccionados.")
 
-# --- PESTAÑA 5: DOTACIÓN Y PRODUCCIÓN MENSUAL (CON URL ENCODING PARA DOTACIÓN) ---
+# --- PESTAÑA 5: DOTACIÓN Y PRODUCCIÓN MENSUAL ---
 with tab5:
     st.subheader("👥 Dotación Comercial y Producción Mensual por Asesor (S/ Netos)")
     st.markdown("Matriz de dotación con consolidación de **Monto Neto Desembolsado** de **Enero a Octubre** y cálculo de **Promedio Mensual**.")
 
-    if not df_dotacion.empty:
+    if df_dotacion is not None and isinstance(df_dotacion, pd.DataFrame) and not df_dotacion.empty:
         df_dot_flt = df_dotacion.copy()
 
         cols_dot = {str(c).upper(): c for c in df_dot_flt.columns}
@@ -655,7 +661,7 @@ with tab5:
         col_dot_p = next((cols_dot[k] for k in cols_dot if 'PLAZA' in k or 'ZONA' in k), None)
         col_dot_j = next((cols_dot[k] for k in cols_dot if 'JEFE' in k), None)
         col_dot_s = next((cols_dot[k] for k in cols_dot if 'SUPERVISOR' in k), None)
-        col_dot_a = next((cols_dot[k] for k in cols_dot if any(key in k for key in ['ASESOR', 'PROMOTOR', 'NOMBRE', 'DNI', 'PERSONAL'])), None)
+        col_dot_a = next((cols_dot[k] for k in cols_dot if any(key in k for key in ['PROMOTOR', 'ASESOR', 'NOMBRE', 'DNI', 'PERSONAL'])), None)
 
         if sel_territorial != "TODOS" and col_dot_t:
             df_dot_flt = df_dot_flt[df_dot_flt[col_dot_t] == sel_territorial]
@@ -723,7 +729,7 @@ with tab5:
         styled_dotacion = df_dot_unida.style.format(formatos_dict)
         st.dataframe(styled_dotacion, use_container_width=True)
     else:
-        st.warning("⚠️ La pestaña de Dotación no tiene datos o no se pudo leer correctamente.")
+        st.warning("⚠️ No se pudieron cargar los datos de Dotación desde el Google Sheet. Verifique que la hoja sea de acceso público.")
 
 # --- PESTAÑA 6: MONTE CARLO ---
 with tab6:
