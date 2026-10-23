@@ -348,7 +348,7 @@ with f_col3:
         default=[]
     )
 
-# --- FILTRADO PRODUCCIÓN ---
+# --- FILTRADO PRODUCCIÓN (ESTADO + MES DESEMBOLSO) ---
 df_flt_prod = df_flt.copy()
 if sel_estados_prod:
     df_flt_prod = df_flt_prod[df_flt_prod['ESTADO'].isin(sel_estados_prod)]
@@ -498,16 +498,14 @@ with tab3:
             fig_jefe.update_layout(template="plotly_white")
             st.plotly_chart(fig_jefe, use_container_width=True)
 
-# --- PESTAÑA 4: REPORTE DE VENTA POR SUPERVISOR CON METAS Y SEMÁFORO ---
+# --- PESTAÑA 4: REPORTE DE VENTA POR SUPERVISOR CON FILTRO TEMPORAL Y SEMÁFORO ---
 with tab4:
     st.subheader("🎯 Reporte de Venta y Metas por Línea de Supervisión")
-    st.markdown("Consolidado dinámico sincronizado con las metas oficiales por **Supervisor, Estado, Plaza/Zona, Jefe Zonal y Territorial** con medición en estado **`DESEMBOLSADO`**.")
+    st.markdown("Consolidado dinámico sincronizado con el **Filtro de Meses de Desembolso**, Estado y Estructura Comercial.")
 
-    # 1. Obtener producción real desembolsada por supervisor desde el filtro actual
-    df_desem = df_flt[df_flt['ESTADO'] == 'DESEMBOLSADO']
-    
-    if 'SUPERVISOR' in df_desem.columns:
-        df_prod_sup = df_desem.groupby('SUPERVISOR').agg(
+    # 1. Utilizar df_flt_prod (YA FILTRADO POR MESES DE DESEMBOLSO Y ESTADO SELECCIONADO)
+    if not df_flt_prod.empty and 'SUPERVISOR' in df_flt_prod.columns:
+        df_prod_sup = df_flt_prod.groupby('SUPERVISOR').agg(
             OPERACIONES_DESEMBOLSA=('NETO', 'count'),
             MONTO_DESEMBOLSADO=('NETO', 'sum')
         ).reset_index()
@@ -527,7 +525,7 @@ with tab4:
     if sel_sup != "TODOS":
         df_metas_flt = df_metas_flt[df_metas_flt['SUPERVISOR'] == sel_sup]
 
-    # 3. Cruzar la tabla de metas con el avance real desembolsado
+    # 3. Cruzar la tabla de metas con el avance real desembolsado dentro del rango de meses seleccionado
     df_reporte = pd.merge(df_metas_flt, df_prod_sup, on='SUPERVISOR', how='left')
     df_reporte['OPERACIONES_DESEMBOLSA'] = df_reporte['OPERACIONES_DESEMBOLSA'].fillna(0).astype(int)
     df_reporte['MONTO_DESEMBOLSADO'] = df_reporte['MONTO_DESEMBOLSADO'].fillna(0)
@@ -582,7 +580,7 @@ with tab4:
             'Operaciones Desembolsadas': '{:,.0f}',
             '% Cumplimiento Ops': '{:,.2f}%',
             'Meta Desembolso (S/)': 'S/ {:,.2f}',
-            'Monto Desembolsado (S/)': 'S/ {:,.2f}',
+            'Monto Desembolso (S/)': 'S/ {:,.2f}',
             '% Cumplimiento Monto': '{:,.2f}%'
         })
 
