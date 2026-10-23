@@ -118,14 +118,19 @@ def cargar_datos_corporativos():
         df_dotacion = pd.read_csv(sheet_url_dotacion, dtype=str)
         df_dotacion.columns = df_dotacion.columns.astype(str).str.strip()
         
-        # Formatear la columna DNI para que siempre tenga 8 dígitos con 0 a la izquierda
+        # Limpieza y estandarización de columnas para filtros
+        for c in df_dotacion.columns:
+            df_dotacion[c] = df_dotacion[c].fillna('').astype(str).str.strip()
+            if c.upper() in ['TERRITORIAL', 'ZONA', 'PLAZA', 'JEFE ZONAL', 'SUPERVISOR', 'ASESOR CORRECTO', 'ESTADO']:
+                df_dotacion[c] = df_dotacion[c].str.upper()
+
+        # Formatear la columna DNI a 8 dígitos con 0 a la izquierda
         cols_dni = [c for c in df_dotacion.columns if 'DNI' in c.upper()]
         if cols_dni:
             col_dni = cols_dni[0]
-            df_dotacion[col_dni] = df_dotacion[col_dni].fillna('').astype(str).str.strip()
             df_dotacion[col_dni] = df_dotacion[col_dni].apply(lambda x: x.zfill(8) if x and x.isdigit() and len(x) < 8 else x)
-    except Exception as e:
-        df_dotacion = pd.DataFrame(columns=['ASESOR CORRECTO', 'DNI', 'ESTADO', 'SUPERVISOR', 'JEFE ZONAL', 'PLAZA'])
+    except Exception:
+        df_dotacion = pd.DataFrame(columns=['ASESOR CORRECTO', 'DNI', 'ESTADO', 'SUPERVISOR', 'JEFE ZONAL', 'PLAZA', 'ZONA', 'TERRITORIAL'])
 
     datos_metas = [
         ["PAOLA PEREZ", "ACTIVO", "LIMA", "FLAVIA LAURA", "CECILIA LOPEZ", 28, 1290000],
@@ -748,8 +753,53 @@ with tab5:
     st.plotly_chart(fig_mc, use_container_width=True)
 
 with tab6:
-    st.subheader("👥 Dotación de Asesores (Pestaña Dotación)")
+    st.subheader("👥 Dotación de Asesores (Personal Activo)")
+    
     if df_dotacion is not None and not df_dotacion.empty:
-        st.dataframe(df_dotacion, use_container_width=True)
+        df_dot_flt = df_dotacion.copy()
+        
+        # Filtro obligatorio: Solo estado ACTIVO
+        cols_est = [c for c in df_dot_flt.columns if 'ESTADO' in c.upper()]
+        if cols_est:
+            df_dot_flt = df_dot_flt[df_dot_flt[cols_est[0]].astype(str).str.upper() == 'ACTIVO']
+
+        # Filtro de Territorial (Seguridad por usuario + Selección en sidebar)
+        cols_ter = [c for c in df_dot_flt.columns if 'TERRITORIAL' in c.upper()]
+        if cols_ter:
+            if territorial_asignada != "TODAS":
+                df_dot_flt = df_dot_flt[df_dot_flt[cols_ter[0]] == territorial_asignada]
+            elif sel_territorial != "TODOS":
+                df_dot_flt = df_dot_flt[df_dot_flt[cols_ter[0]] == sel_territorial]
+
+        # Filtro por Zona
+        cols_zona = [c for c in df_dot_flt.columns if 'ZONA' in c.upper()]
+        if cols_zona and sel_zona != "TODAS":
+            df_dot_flt = df_dot_flt[df_dot_flt[cols_zona[0]] == sel_zona]
+
+        # Filtro por Plaza
+        cols_plz = [c for c in df_dot_flt.columns if 'PLAZA' in c.upper()]
+        if cols_plz and sel_plaza != "TODAS":
+            df_dot_flt = df_dot_flt[df_dot_flt[cols_plz[0]] == sel_plaza]
+
+        # Filtro por Jefe Zonal
+        cols_jefe = [c for c in df_dot_flt.columns if 'JEFE' in c.upper()]
+        if cols_jefe and sel_jefe != "TODOS":
+            df_dot_flt = df_dot_flt[df_dot_flt[cols_jefe[0]] == sel_jefe]
+
+        # Filtro por Supervisor
+        cols_sup = [c for c in df_dot_flt.columns if 'SUPERVISOR' in c.upper()]
+        if cols_sup and sel_sup != "TODOS":
+            df_dot_flt = df_dot_flt[df_dot_flt[cols_sup[0]] == sel_sup]
+
+        # Filtro por Asesor
+        cols_asesor = [c for c in df_dot_flt.columns if 'ASESOR' in c.upper()]
+        if cols_asesor and sel_asesor != "TODOS":
+            df_dot_flt = df_dot_flt[df_dot_flt[cols_asesor[0]] == sel_asesor]
+
+        if not df_dot_flt.empty:
+            st.markdown(f"**Total Personal Activo Filtrado:** `{len(df_dot_flt)}` colaboradores")
+            st.dataframe(df_dot_flt, use_container_width=True)
+        else:
+            st.info("No se encontraron colaboradores en estado ACTIVO que coincidan con la combinación de filtros seleccionados.")
     else:
         st.info("No se encontraron registros en la pestaña 'Dotación' del Google Sheets.")
