@@ -86,31 +86,26 @@ def cargar_datos_corporativos():
         if col in df.columns:
             df[col] = df[col].fillna('').astype(str).str.strip().str.upper()
 
-    # Extracción garantizada de fechas y meses (mapeo robusto de texto y formato)
+    # Parseo de Fecha de Solicitud y Periodo Remesa (YYYY-MM)
     col_sol = [c for c in df.columns if 'SOLICITUD' in c.upper()][0]
     dt_sol = pd.to_datetime(df[col_sol], errors='coerce', format='mixed', dayfirst=True)
     df['FECHA_SOLICITUD_DT'] = dt_sol
-    # Si la fecha falla pero hay texto YYYY-MM, lo extraemos directamente
-    df['AÑO_MES_SOLICITUD'] = dt_sol.dt.strftime('%Y-%m')
-    mask_nan_sol = df['AÑO_MES_SOLICITUD'].isna() | (df['AÑO_MES_SOLICITUD'] == '')
-    if mask_nan_sol.any():
-        df.loc[mask_nan_sol, 'AÑO_MES_SOLICITUD'] = df.loc[mask_nan_sol, col_sol].astype(str).str.slice(0, 7)
+    df['AÑO_MES_SOLICITUD'] = dt_sol.dt.strftime('%Y-%m').fillna('')
+    mask_sol = df['AÑO_MES_SOLICITUD'] == ''
+    if mask_sol.any():
+        df.loc[mask_sol, 'AÑO_MES_SOLICITUD'] = df.loc[mask_sol, col_sol].astype(str).str.slice(0, 7)
 
+    # Parseo de Fecha de Desembolso y Periodo Producción (YYYY-MM)
     col_des = [c for c in df.columns if 'DESEMBOLSO' in c.upper()][0]
     dt_des = pd.to_datetime(df[col_des], errors='coerce', format='mixed', dayfirst=True)
     df['FECHA_DESEMBOLSO_DT'] = dt_des
-    df['AÑO_MES_DESEMBOLSO'] = dt_des.dt.strftime('%Y-%m')
-    mask_nan_des = df['AÑO_MES_DESEMBOLSO'].isna() | (df['AÑO_MES_DESEMBOLSO'] == '')
-    if mask_nan_des.any():
-        df.loc[mask_nan_des, 'AÑO_MES_DESEMBOLSO'] = df.loc[mask_nan_des, col_des].astype(str).str.slice(0, 7)
+    df['AÑO_MES_DESEMBOLSO'] = dt_des.dt.strftime('%Y-%m').fillna('')
+    mask_des = df['AÑO_MES_DESEMBOLSO'] == ''
+    if mask_des.any():
+        df.loc[mask_des, 'AÑO_MES_DESEMBOLSO'] = df.loc[mask_des, col_des].astype(str).str.slice(0, 7)
 
     df['MES_DESEMBOLSO_NUM'] = dt_des.dt.month.fillna(0).astype(int)
 
-    # Limpieza final de valores extraños en los meses
-    df['AÑO_MES_SOLICITUD'] = df['AÑO_MES_SOLICITUD'].fillna('').astype(str).str.strip()
-    df['AÑO_MES_DESEMBOLSO'] = df['AÑO_MES_DESEMBOLSO'].fillna('').astype(str).str.strip()
-
-    df = df[df['FECHA_SOLICITUD_DT'].notna()]
     cols_id = [c for c in df.columns if any(k in c.upper() for k in ['EXPEDIE', 'DNI', 'CREDITO', 'OPERACION'])]
     df['ID_UNICO'] = df[cols_id[0]].astype(str).str.strip() if cols_id else df.index.astype(str)
     df = df.drop_duplicates(subset=['ID_UNICO', 'AÑO_MES_SOLICITUD'], keep='first')
@@ -218,8 +213,8 @@ st.markdown("---")
 
 def obtener_opciones_limpias(df_in, col_name):
     if df_in is not None and isinstance(df_in, pd.DataFrame) and col_name in df_in.columns:
-        elementos = sorted([str(x) for x in df_in[col_name].dropna().unique() if str(x).strip() not in ['', 'NAN', 'NAT', 'NONE', 'NaT', 'nan', 'NaT', '20Na-a']])
-        return [e for e in elementos if len(e) == 7 and '-' in e]
+        elementos = sorted([str(x) for x in df_in[col_name].dropna().unique() if str(x).strip() not in ['', 'NAN', 'NAT', 'NONE', 'NaT', 'nan']])
+        return elementos
     return []
 
 if logo_encontrado:
@@ -287,7 +282,8 @@ st.markdown("### 🎛️ Controles Temporales y Estado Operativo")
 f_col1, f_col2, f_col3 = st.columns(3)
 
 with f_col1:
-    estados_disp = obtener_opciones_limpias(df_base, 'ESTADO')
+    # Opciones de estados extraídas directamente de la base completa
+    estados_disp = sorted([x for x in df_base['ESTADO'].dropna().unique() if str(x).strip() not in ['', 'NAN', 'NONE']])
     sel_estados_prod = st.multiselect(
         "📌 Estado Operación (Filtro Producción)", 
         options=estados_disp, 
@@ -295,9 +291,8 @@ with f_col1:
     )
 
 with f_col2:
-    # Garantizamos que tome los meses de TODO el df_base completo sin restricciones previas
-    meses_des_disp = sorted(df_base['AÑO_MES_DESEMBOLSO'].dropna().unique())
-    meses_des_disp = [m for m in meses_des_disp if len(str(m)) == 7 and '-' in str(m)]
+    # Opciones de meses de desembolso extraídas de la base completa
+    meses_des_disp = sorted([x for x in df_base['AÑO_MES_DESEMBOLSO'].dropna().unique() if str(x).strip() not in ['', 'NAN', 'NAT', 'NONE']])
     sel_meses_desembolso = st.multiselect(
         "🗓️ Meses Desembolso (Filtro Producción)", 
         options=meses_des_disp, 
@@ -305,8 +300,8 @@ with f_col2:
     )
 
 with f_col3:
-    meses_sol_disp = sorted(df_base['AÑO_MES_SOLICITUD'].dropna().unique())
-    meses_sol_disp = [m for m in meses_sol_disp if len(str(m)) == 7 and '-' in str(m)]
+    # Opciones de meses de remesa extraídas de la base completa
+    meses_sol_disp = sorted([x for x in df_base['AÑO_MES_SOLICITUD'].dropna().unique() if str(x).strip() not in ['', 'NAN', 'NAT', 'NONE']])
     sel_meses_remesa = st.multiselect(
         "📥 Filtrar Meses de Remesa (Fecha Solicitud)", 
         options=meses_sol_disp, 
@@ -481,7 +476,6 @@ with tab4:
         0.0
     )
 
-    # Ordenamiento estricto solicitado: 1° % Cumplimiento Ops, 2° % Cumplimiento Monto (ambos descendentes)
     df_reporte = df_reporte.sort_values(by=['% Cumplimiento Ops', '% Cumplimiento Monto'], ascending=[False, False]).reset_index(drop=True)
 
     df_reporte_final = df_reporte[[
