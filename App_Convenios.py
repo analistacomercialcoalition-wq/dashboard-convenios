@@ -4,6 +4,7 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 import os
+import urllib.parse
 
 # Configuración de página corporativa
 st.set_page_config(
@@ -252,13 +253,14 @@ def cargar_datos_corporativos():
     for c in ['SUPERVISOR', 'ESTADO_SUP', 'PLAZA', 'JEFE ZONAL', 'TERRITORIAL']:
         df_metas_oficial[c] = df_metas_oficial[c].str.strip().str.upper()
 
-    # 3. Carga Blindada de la Pestaña DOTACIÓN
+    # 3. Carga con Codificación URL Segura para la Pestaña DOTACIÓN
     posibles_nombres_dotacion = ["DOTACION", "DOTACIÓN", "Dotacion", "Dotación"]
     df_dotacion = pd.DataFrame()
 
     for nom in posibles_nombres_dotacion:
         try:
-            url_dot = f"https://docs.google.com/spreadsheets/d/{base_id}/gviz/tq?tqx=out:csv&sheet={nom}"
+            sheet_encoded = urllib.parse.quote(nom)
+            url_dot = f"https://docs.google.com/spreadsheets/d/{base_id}/gviz/tq?tqx=out:csv&sheet={sheet_encoded}"
             df_temp = pd.read_csv(url_dot, dtype=str)
             if not df_temp.empty and len(df_temp.columns) > 1:
                 df_dotacion = df_temp
@@ -270,9 +272,6 @@ def cargar_datos_corporativos():
         df_dotacion.columns = df_dotacion.columns.str.strip()
         for col in df_dotacion.columns:
             df_dotacion[col] = df_dotacion[col].fillna('').astype(str).str.strip().str.upper()
-    else:
-        # Fallback seguro por si no encuentra la hoja exacta para evitar errores
-        df_dotacion = pd.DataFrame(columns=['ASESOR', 'SUPERVISOR', 'PLAZA', 'JEFE ZONAL', 'TERRITORIAL'])
 
     return df, df_metas_oficial, df_dotacion
 
@@ -643,7 +642,7 @@ with tab4:
     else:
         st.info("No se encontraron registros de metas que coincidan con los filtros comerciales seleccionados.")
 
-# --- PESTAÑA 5: DOTACIÓN Y PRODUCCIÓN MENSUAL (BLINDADA) ---
+# --- PESTAÑA 5: DOTACIÓN Y PRODUCCIÓN MENSUAL (CON URL ENCODING PARA DOTACIÓN) ---
 with tab5:
     st.subheader("👥 Dotación Comercial y Producción Mensual por Asesor (S/ Netos)")
     st.markdown("Matriz de dotación con consolidación de **Monto Neto Desembolsado** de **Enero a Octubre** y cálculo de **Promedio Mensual**.")
@@ -656,7 +655,7 @@ with tab5:
         col_dot_p = next((cols_dot[k] for k in cols_dot if 'PLAZA' in k or 'ZONA' in k), None)
         col_dot_j = next((cols_dot[k] for k in cols_dot if 'JEFE' in k), None)
         col_dot_s = next((cols_dot[k] for k in cols_dot if 'SUPERVISOR' in k), None)
-        col_dot_a = next((cols_dot[k] for k in cols_dot if any(key in k for key in ['ASESOR', 'NOMBRE', 'DNI', 'PERSONAL'])), None)
+        col_dot_a = next((cols_dot[k] for k in cols_dot if any(key in k for key in ['ASESOR', 'PROMOTOR', 'NOMBRE', 'DNI', 'PERSONAL'])), None)
 
         if sel_territorial != "TODOS" and col_dot_t:
             df_dot_flt = df_dot_flt[df_dot_flt[col_dot_t] == sel_territorial]
@@ -724,7 +723,7 @@ with tab5:
         styled_dotacion = df_dot_unida.style.format(formatos_dict)
         st.dataframe(styled_dotacion, use_container_width=True)
     else:
-        st.warning("⚠️ La pestaña de Dotación no tiene datos o no se pudo leer correctamente. Verifique que la hoja en Google Sheets tenga el nombre 'DOTACION'.")
+        st.warning("⚠️ La pestaña de Dotación no tiene datos o no se pudo leer correctamente.")
 
 # --- PESTAÑA 6: MONTE CARLO ---
 with tab6:
