@@ -34,10 +34,15 @@ if 'autenticado' not in st.session_state:
 if 'usuario_correo' not in st.session_state:
     st.session_state.usuario_correo = ""
 
+# Credenciales actualizadas con el nuevo usuario
 CREDENCIALES_USUARIOS = {
     "luigi.socca@coalition.com.pe": {
         "password": "45775003",
         "territorial": "TODAS"
+    },
+    "cecilia.lopez@coalition.com.pe": {
+        "password": "cecilia2026",
+        "territorial": "CECILIA LOPEZ"
     }
 }
 
@@ -601,11 +606,9 @@ with tab4:
 
     df_reporte = df_reporte.sort_values(by=['% Cumplimiento Ops', '% Cumplimiento Monto'], ascending=[False, False]).reset_index(drop=True)
 
-    # GRÁFICA DE BARRAS DE TOP SUPERVISORES CON NÚMEROS GRANDES Y VISTOSOS
     if not df_reporte.empty:
         promedio_desembolsado = df_reporte['MONTO_DESEMBOLSADO'].mean()
         
-        # Top 12 mejores supervisores
         df_top_sup = df_reporte.sort_values('MONTO_DESEMBOLSADO', ascending=False).head(12).copy()
         df_top_sup['MONTO_MILLONES'] = df_top_sup['MONTO_DESEMBOLSADO'] / 1e6
         df_top_sup['FMT_TEXTO'] = df_top_sup['MONTO_MILLONES'].apply(lambda x: f"S/ {x:,.2f}M" if x >= 1 else f"S/ {x*1000:,.0f}k")
