@@ -86,7 +86,6 @@ def cargar_datos_corporativos():
         if col in df.columns:
             df[col] = df[col].fillna('').astype(str).str.strip().str.upper()
 
-    # Parseo de Fecha de Solicitud y Periodo Remesa (YYYY-MM)
     col_sol = [c for c in df.columns if 'SOLICITUD' in c.upper()][0]
     dt_sol = pd.to_datetime(df[col_sol], errors='coerce', format='mixed', dayfirst=True)
     df['FECHA_SOLICITUD_DT'] = dt_sol
@@ -95,7 +94,6 @@ def cargar_datos_corporativos():
     if mask_sol.any():
         df.loc[mask_sol, 'AÑO_MES_SOLICITUD'] = df.loc[mask_sol, col_sol].astype(str).str.slice(0, 7)
 
-    # Parseo de Fecha de Desembolso y Periodo Producción (YYYY-MM)
     col_des = [c for c in df.columns if 'DESEMBOLSO' in c.upper()][0]
     dt_des = pd.to_datetime(df[col_des], errors='coerce', format='mixed', dayfirst=True)
     df['FECHA_DESEMBOLSO_DT'] = dt_des
@@ -282,7 +280,6 @@ st.markdown("### 🎛️ Controles Temporales y Estado Operativo")
 f_col1, f_col2, f_col3 = st.columns(3)
 
 with f_col1:
-    # Opciones de estados extraídas directamente de la base completa
     estados_disp = sorted([x for x in df_base['ESTADO'].dropna().unique() if str(x).strip() not in ['', 'NAN', 'NONE']])
     sel_estados_prod = st.multiselect(
         "📌 Estado Operación (Filtro Producción)", 
@@ -291,7 +288,6 @@ with f_col1:
     )
 
 with f_col2:
-    # Opciones de meses de desembolso extraídas de la base completa
     meses_des_disp = sorted([x for x in df_base['AÑO_MES_DESEMBOLSO'].dropna().unique() if str(x).strip() not in ['', 'NAN', 'NAT', 'NONE']])
     sel_meses_desembolso = st.multiselect(
         "🗓️ Meses Desembolso (Filtro Producción)", 
@@ -300,7 +296,6 @@ with f_col2:
     )
 
 with f_col3:
-    # Opciones de meses de remesa extraídas de la base completa
     meses_sol_disp = sorted([x for x in df_base['AÑO_MES_SOLICITUD'].dropna().unique() if str(x).strip() not in ['', 'NAN', 'NAT', 'NONE']])
     sel_meses_remesa = st.multiselect(
         "📥 Filtrar Meses de Remesa (Fecha Solicitud)", 
@@ -476,6 +471,7 @@ with tab4:
         0.0
     )
 
+    # Ordenamiento estricto: 1° % Cumplimiento Ops, 2° % Cumplimiento Monto (descendentes)
     df_reporte = df_reporte.sort_values(by=['% Cumplimiento Ops', '% Cumplimiento Monto'], ascending=[False, False]).reset_index(drop=True)
 
     df_reporte_final = df_reporte[[
@@ -492,11 +488,25 @@ with tab4:
     })
 
     if not df_reporte_final.empty:
-        df_reporte_display = df_reporte_final.copy()
-        df_reporte_display['% Cumplimiento Ops'] = df_reporte_display['% Cumplimiento Ops'].round(0).astype(int).astype(str) + '%'
-        df_reporte_display['% Cumplimiento Monto'] = df_reporte_display['% Cumplimiento Monto'].round(0).astype(int).astype(str) + '%'
-        
-        st.dataframe(df_reporte_display, use_container_width=True)
+        def color_semaforo(val):
+            if val < 80.0:
+                return 'background-color: #FEE2E2; color: #991B1B; font-weight: bold;' # Rojo (menos de 80%)
+            elif val < 100.0:
+                return 'background-color: #FEF3C7; color: #92400E; font-weight: bold;' # Amarillo tenue (80% al 99%)
+            else:
+                return 'background-color: #DCFCE7; color: #166534; font-weight: bold;' # Verde (100% a más)
+
+        styled_reporte = df_reporte_final.style.map(
+            color_semaforo, subset=['% Cumplimiento Ops', '% Cumplimiento Monto']
+        ).format({
+            'Meta de Operaciones': '{:,.0f}',
+            'Ops Desembolsadas': '{:,.0f}',
+            '% Cumplimiento Ops': '{:.0f}%',
+            'Meta Desembolso (S/)': formato_compacto_limpio,
+            'Monto Desembolsado (S/)': formato_compacto_limpio,
+            '% Cumplimiento Monto': '{:.0f}%'
+        })
+        st.dataframe(styled_reporte, use_container_width=True)
     else:
         st.info("No hay datos para el reporte de supervisión con los filtros actuales.")
 
