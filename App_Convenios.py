@@ -86,14 +86,17 @@ def cargar_datos_corporativos():
         if col in df.columns:
             df[col] = df[col].fillna('').astype(str).str.strip().str.upper()
 
+    # Parseo Ultra Robusto con format='mixed' para evitar fallos en fechas
     col_sol = [c for c in df.columns if 'SOLICITUD' in c.upper()][0]
-    df['FECHA_SOLICITUD_DT'] = pd.to_datetime(df[col_sol], dayfirst=True, errors='coerce')
-    df['AÑO_MES_SOLICITUD'] = df['FECHA_SOLICITUD_DT'].dt.strftime('%Y-%m').fillna('')
+    dt_sol = pd.to_datetime(df[col_sol], errors='coerce', format='mixed', dayfirst=True)
+    df['FECHA_SOLICITUD_DT'] = dt_sol
+    df['AÑO_MES_SOLICITUD'] = dt_sol.dt.strftime('%Y-%m').fillna('')
 
     col_des = [c for c in df.columns if 'DESEMBOLSO' in c.upper()][0]
-    df['FECHA_DESEMBOLSO_DT'] = pd.to_datetime(df[col_des], dayfirst=True, errors='coerce')
-    df['AÑO_MES_DESEMBOLSO'] = df['FECHA_DESEMBOLSO_DT'].dt.strftime('%Y-%m').fillna('')
-    df['MES_DESEMBOLSO_NUM'] = df['FECHA_DESEMBOLSO_DT'].dt.month
+    dt_des = pd.to_datetime(df[col_des], errors='coerce', format='mixed', dayfirst=True)
+    df['FECHA_DESEMBOLSO_DT'] = dt_des
+    df['AÑO_MES_DESEMBOLSO'] = dt_des.dt.strftime('%Y-%m').fillna('')
+    df['MES_DESEMBOLSO_NUM'] = dt_des.dt.month.fillna(0).astype(int)
 
     df = df[df['FECHA_SOLICITUD_DT'].notna()]
     cols_id = [c for c in df.columns if any(k in c.upper() for k in ['EXPEDIE', 'DNI', 'CREDITO', 'OPERACION'])]
@@ -203,7 +206,7 @@ st.markdown("---")
 
 def obtener_opciones_limpias(df_in, col_name):
     if df_in is not None and isinstance(df_in, pd.DataFrame) and col_name in df_in.columns:
-        elementos = sorted([x for x in df_in[col_name].dropna().unique() if str(x).strip() not in ['', 'NAN', 'NAT', 'NONE', 'NaT', 'nan']])
+        elementos = sorted([str(x) for x in df_in[col_name].dropna().unique() if str(x).strip() not in ['', 'NAN', 'NAT', 'NONE', 'NaT', 'nan']])
         return elementos
     return []
 
@@ -476,7 +479,6 @@ with tab4:
         'META DESEMBOLSO': 'Meta Desembolso (S/)', 'MONTO_DESEMBOLSADO': 'Monto Desembolsado (S/)'
     })
 
-    # Mostrar tabla limpia estándar sin estilos complejos de Pandas para garantizar 0 errores
     if not df_reporte_final.empty:
         st.dataframe(df_reporte_final, use_container_width=True)
     else:
@@ -509,20 +511,4 @@ with tab5:
         p90_l.append(np.percentile(totales, 90))
 
     df_res_mc = pd.DataFrame({
-        'Mes': meses_nombres, 'Pesimista (P10)': p10_l, 'Base / Esperado (P50)': p50_l, 'Optimista (P90)': p90_l
-    })
-    df_res_mc['P10_FMT'] = df_res_mc['Pesimista (P10)'].apply(formato_compacto_limpio)
-    df_res_mc['P50_FMT'] = df_res_mc['Base / Esperado (P50)'].apply(formato_compacto_limpio)
-    df_res_mc['P90_FMT'] = df_res_mc['Optimista (P90)'].apply(formato_compacto_limpio)
-
-    fig_mc = px.line(
-        df_res_mc, x='Mes', y=['Pesimista (P10)', 'Base / Esperado (P50)', 'Optimista (P90)'],
-        title="Proyección Anual de Bandas Estacionales Perú - Convenios (S/)", markers=True,
-        color_discrete_map={'Pesimista (P10)': '#EF4444', 'Base / Esperado (P50)': '#2563EB', 'Optimista (P90)': '#10B981'}
-    )
-    fig_mc.update_traces(mode='lines+markers+text', textposition='top center')
-    fig_mc.data[0].text = df_res_mc['P10_FMT']
-    fig_mc.data[1].text = df_res_mc['P50_FMT']
-    fig_mc.data[2].text = df_res_mc['P90_FMT']
-    fig_mc.update_layout(height=500, yaxis_title="Monto Proyectado (S/)", template="plotly_white")
-    st.plotly_chart(fig_mc, use_container_width=True)
+        'Mes': meses_nombres, 'Pesimista (P10)': p1
