@@ -834,9 +834,15 @@ with tab6:
                 if 'DNI_HOJA1' in df_dot_flt.columns:
                     df_dot_flt = df_dot_flt.drop(columns=['DNI_HOJA1'])
                 
+                # Asegurar tipo objeto para evitar conflictos LossySetitemError
+                for m in meses_cols:
+                    if m not in df_dot_flt.columns:
+                        df_dot_flt[m] = 0.0
+                    df_dot_flt[m] = df_dot_flt[m].astype(object)
+
+                df_dot_flt['Promedio'] = 0.0
                 mes_nombre_a_num = {'ENERO': 1, 'FEBRERO': 2, 'MARZO': 3, 'ABRIL': 4, 'MAYO': 5, 'JUNIO': 6, 'JULIO': 7, 'AGOSTO': 8, 'SETIEMBRE': 9, 'SEPTIEMBRE': 9, 'OCTUBRE': 10, 'NOVIEMBRE': 11, 'DICIEMBRE': 12}
                 
-                # Iterar por cada promotor para aplicar el vaciado de meses previos al ingreso
                 for idx, row in df_dot_flt.iterrows():
                     mes_ingreso_num = 1
                     if cols_fecha_ingreso:
@@ -852,9 +858,14 @@ with tab6:
                     
                     if not cols_fecha_ingreso or mes_ingreso_num == 1:
                         for idx_m, m in enumerate(meses_cols, start=1):
-                            if m in row and pd.notna(row[m]) and row[m] > 0:
-                                mes_ingreso_num = idx_m
-                                break
+                            val_celda = row.get(m, 0.0)
+                            try:
+                                num_val = float(val_celda) if pd.notna(val_celda) and str(val_celda).strip() != "" else 0.0
+                                if num_val > 0:
+                                    mes_ingreso_num = idx_m
+                                    break
+                            except:
+                                pass
 
                     valores_validos_promedio = []
                     for idx_m, m in enumerate(meses_cols, start=1):
@@ -862,8 +873,12 @@ with tab6:
                             df_dot_flt.at[idx, m] = ""
                         else:
                             val_prod = row.get(m, 0.0)
-                            val_prod = 0.0 if pd.isna(val_prod) else float(val_prod)
-                            valores_validos_promedio.append(val_prod)
+                            try:
+                                num_prod = float(val_prod) if pd.notna(val_prod) and str(val_prod).strip() != "" else 0.0
+                            except:
+                                num_prod = 0.0
+                            valores_validos_promedio.append(num_prod)
+                            df_dot_flt.at[idx, m] = formato_compacto_limpio(num_prod)
                     
                     if valores_validos_promedio:
                         df_dot_flt.at[idx, 'Promedio'] = sum(valores_validos_promedio) / len(valores_validos_promedio)
@@ -882,10 +897,10 @@ with tab6:
             if 'Promedio' in df_dot_flt.columns:
                 df_dot_flt = df_dot_flt.sort_values(by='Promedio', ascending=False).reset_index(drop=True)
 
-            cols_a_formatear = [c for c in ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Setiembre', 'Octubre', 'Promedio'] if c in df_dot_flt.columns]
+            if 'Promedio' in df_dot_flt.columns:
+                df_dot_flt['Promedio'] = df_dot_flt['Promedio'].apply(formato_compacto_limpio)
 
-            for col_m in cols_a_formatear:
-                df_dot_flt[col_m] = df_dot_flt[col_m].apply(lambda x: formato_compacto_limpio(x) if x != "" else "")
+            cols_a_formatear = [c for c in ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Setiembre', 'Octubre', 'Promedio'] if c in df_dot_flt.columns]
 
             # Configuración de columnas nativa con DNI y Promotor fijados a la izquierda
             col_cfg = {}
