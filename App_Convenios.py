@@ -345,14 +345,18 @@ if sel_meses_remesa:
 st.markdown("---")
 
 def formato_compacto_limpio(val):
-    if pd.isna(val):
-        return "S/ 0.00"
-    if val >= 1e6:
-        return f"S/ {val/1e6:,.2f}M"
-    elif val >= 1e3:
-        return f"S/ {val/1e3:,.1f}k"
-    else:
-        return f"S/ {val:,.2f}"
+    if pd.isna(val) or val == "" or val == "-":
+        return "-"
+    if isinstance(val, (int, float)):
+        if val == 0:
+            return "S/ 0.00"
+        elif val >= 1e6:
+            return f"S/ {val/1e6:,.2f}M"
+        elif val >= 1e3:
+            return f"S/ {val/1e3:,.1f}k"
+        else:
+            return f"S/ {val:,.2f}"
+    return str(val)
 
 total_neto = df_flt_prod['NETO'].sum() if not df_flt_prod.empty else 0
 total_ops = len(df_flt_prod)
@@ -803,7 +807,10 @@ with tab6:
         if cols_asesor and sel_asesor != "TODOS":
             df_dot_flt = df_dot_flt[df_dot_flt[cols_asesor[0]] == sel_asesor]
 
-        # 4. Cruzar con Hoja 1 por DNI para calcular montos netos por mes (Enero a Octubre) + Promedio + Cuartil
+        # 4. Detección automática de la fecha/mes de ingreso del promotor desde la dotación
+        cols_fecha_ingreso = [c for c in df_dot_flt.columns if any(k in c.upper() for k in ['INGRES', 'FECHA', 'ALTA', 'INICIO'])]
+        
+        # 5. Cruzar con Hoja 1 por DNI para calcular montos netos por mes (Enero a Octubre)
         if not df_dot_flt.empty and not df_base.empty:
             map_meses = {1: 'Enero', 2: 'Febrero', 3: 'Marzo', 4: 'Abril', 5: 'Mayo', 6: 'Junio', 7: 'Julio', 8: 'Agosto', 9: 'Setiembre', 10: 'Octubre', 11: 'Noviembre', 12: 'Diciembre'}
             df_base_temp = df_base[df_base['ESTADO'] == 'DESEMBOLSADO'].copy()
@@ -818,14 +825,7 @@ with tab6:
                     df_pivot[m] = 0.0
             
             df_pivot = df_pivot[meses_cols].copy()
-            df_pivot['Promedio'] = df_pivot[meses_cols].mean(axis=1)
-
-            if len(df_pivot) >= 4:
-                df_pivot['Cuartil'] = pd.qcut(df_pivot['Promedio'].rank(method='first', ascending=False), 4, labels=['Cuartil 1 (Top)', 'Cuartil 2', 'Cuartil 3', 'Cuartil 4 (Bajo)'])
-            else:
-                df_pivot['Cuartil'] = 'Cuartil 1 (Top)'
-
-            df_pivot = df_pivot.reset_index()
+            df_pivot.reset_index(inplace=True)
 
             cols_dni_dot = [c for c in df_dot_flt.columns if 'DNI' in c.upper()]
             if cols_dni_dot:
@@ -834,11 +834,49 @@ with tab6:
                 if 'DNI_HOJA1' in df_dot_flt.columns:
                     df_dot_flt = df_dot_flt.drop(columns=['DNI_HOJA1'])
                 
-                for m in meses_cols + ['Promedio']:
-                    if m in df_dot_flt.columns:
-                        df_dot_flt[m] = df_dot_flt[m].fillna(0.0)
-                if 'Cuartil' in df_dot_flt.columns:
-                    df_dot_flt['Cuartil'] = df_dot_flt['Cuartil'].fillna('Cuartil 4 (Bajo)')
+                # Procesar mes de ingreso y vaciar meses anteriores al ingreso
+                mes_nombre_a_num = {'ENERO': 1, 'FEBRERO': 2, 'MARZO': 3, 'ABRIL': 4, 'MAYO': 5, 'JUNIO': 6, 'JULIO': 7, 'AGOSTO': 8, 'SETIEMBRE': 9, 'SEPTIEMBRE': 9, 'OCTUBRE': 10, 'NOVIEMBRE': 11, 'DICIEMBRE': 12}
+                
+                for idx, row in df_dot_flt.iterrows():
+                    mes_ingreso_num = 1  # Por defecto desde Enero si no se encuentra columna de fecha
+                    if cols_fecha_ingreso:
+                        val_fecha_str = str(row[cols_fecha_ingreso[0]]).strip()
+                        dt_ing = pd.to_datetime(val_fecha_str, errors='coerce', format='mixed', dayfirst=True)
+                        if pd.notna(dt_ing):
+                            mes_ingreso_num = dt_ing.month
+                        else:
+                            for nombre_m, num_m in mes_nombre_a_num.items():
+                                if nombre_m in val_fecha_str.upper():
+                                    mes_ingreso_num = num_m
+                                    break
+                    
+                    # Si no hay fecha en dotación, inferir el primer mes en que tuvo producción o venta real
+                    if not cols_fecha_ingreso or mes_ingreso_num == 1:
+                        for idx_m, m in enumerate(meses_cols, start=1):
+                            if m in row and pd.notna(row[m]) and row[m] > 0:
+                                mes_ingreso_num = idx_m
+                                break
+
+                    # Asignar celdas vacías a los meses anteriores a la fecha de ingreso
+                    valores_validos_promedio = []
+                    for idx_m, m in enumerate(meses_cols, start=1):
+                        if idx_m < mes_ingreso_num:
+                            df_dot_flt.at[idx, m] = ""  # Vacío para que no afecte ni muestre cero erróneo
+                        else:
+                            val_prod = row.get(m, 0.0)
+                            val_prod = 0.0 if pd.isna(val_prod) else float(val_prod)
+                            valores_validos_promedio.append(val_prod)
+                    
+                    # Calcular el promedio únicamente considerando los meses activos desde su fecha de ingreso
+                    if valores_validos_promedio:
+                        df_dot_flt.at[idx, 'Promedio'] = sum(valores_validos_promedio) / len(valores_validos_promedio)
+                    else:
+                        df_dot_flt.at[idx, 'Promedio'] = 0.0
+
+            if len(df_dot_flt) >= 4 and 'Promedio' in df_dot_flt.columns:
+                df_dot_flt['Cuartil'] = pd.qcut(df_dot_flt['Promedio'].rank(method='first', ascending=False), 4, labels=['Cuartil 1 (Top)', 'Cuartil 2', 'Cuartil 3', 'Cuartil 4 (Bajo)'])
+            else:
+                df_dot_flt['Cuartil'] = 'Cuartil 1 (Top)'
 
         if not df_dot_flt.empty:
             st.markdown(f"**Total Personal Activo Filtrado:** `{len(df_dot_flt)}` colaboradores")
@@ -848,6 +886,10 @@ with tab6:
                 df_dot_flt = df_dot_flt.sort_values(by='Promedio', ascending=False).reset_index(drop=True)
 
             cols_a_formatear = [c for c in ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Setiembre', 'Octubre', 'Promedio'] if c in df_dot_flt.columns]
+
+            # Aplicar formato compacto solo a los valores numéricos válidos (dejando los vacíos intactos)
+            for col_m in cols_a_formatear:
+                df_dot_flt[col_m] = df_dot_flt[col_m].apply(lambda x: formato_compacto_limpio(x) if x != "" else "")
 
             # Configuración de columnas nativa con DNI y Promotor fijados a la izquierda
             col_cfg = {}
@@ -869,9 +911,8 @@ with tab6:
                 )
 
             for col_m in cols_a_formatear:
-                col_cfg[col_m] = st.column_config.NumberColumn(
+                col_cfg[col_m] = st.column_config.TextColumn(
                     label=col_m,
-                    format="S/ %.2f",
                     width="small"
                 )
 
