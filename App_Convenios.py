@@ -367,7 +367,7 @@ with tab1:
         st.info("No se encontraron registros de producción con los filtros seleccionados.")
 
 with tab2:
-    st.subheader("📦 Conteo Exacto de Remesas por Fecha de Solicitud")
+    st.subheader("📦 Ingreso de Remesas por Días (Fecha de Solicitud)")
     est_rem_disp = ["TODOS"] + obtener_opciones_limpias(df_remesas, 'ESTADO')
     sel_est_rem = st.selectbox("📌 Filtrar Estado interno en Remesas (Opcional):", est_rem_disp)
     
@@ -387,25 +387,52 @@ with tab2:
     r_kpi4.metric("💰 Monto Referencial Solicitado", formato_compacto_limpio(rem_total_monto))
 
     st.markdown("---")
+
+    if not df_rem_tab.empty and df_rem_tab['FECHA_SOLICITUD_DT'].notna().any():
+        df_diario_rem = df_rem_tab.groupby(df_rem_tab['FECHA_SOLICITUD_DT'].dt.date).size().reset_index(name='CANTIDAD')
+        df_diario_rem = df_diario_rem.sort_values('FECHA_SOLICITUD_DT')
+        df_diario_rem['FECHA_STR'] = pd.to_datetime(df_diario_rem['FECHA_SOLICITUD_DT']).dt.strftime('%d %b')
+
+        fig_rem_line = go.Figure()
+        
+        # Línea y área sombreada verde de remesas
+        fig_rem_line.add_trace(go.Scatter(
+            x=df_diario_rem['FECHA_STR'],
+            y=df_diario_rem['CANTIDAD'],
+            mode='lines+markers+text',
+            name='Remesas',
+            text=df_diario_rem['CANTIDAD'],
+            textposition='top center',
+            line=dict(color='#16A34A', width=3, dash='dash'),
+            marker=dict(size=8, color='#16A34A'),
+            fill='tozeroy',
+            fillcolor='rgba(22, 163, 74, 0.1)'
+        ))
+
+        # Línea horizontal de Meta fija en 90
+        fig_rem_line.add_hline(
+            y=90, 
+            line_dash="dash", 
+            line_color="black", 
+            line_width=2,
+            annotation_text="Meta: 90 Ops", 
+            annotation_position="top left"
+        )
+
+        fig_rem_line.update_layout(
+            title="Ingreso de remesas por día",
+            xaxis_title="Fecha de Solicitud",
+            yaxis_title="N° de Operaciones",
+            height=450,
+            template="plotly_white",
+            showlegend=True,
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0)
+        )
+        st.plotly_chart(fig_rem_line, use_container_width=True)
+    else:
+        st.info("No hay suficientes datos diarios de remesas para graficar.")
+
     col_r1, col_r2 = st.columns([2, 1])
-
-    with col_r1:
-        if not df_rem_tab.empty:
-            df_rem_mensual = df_rem_tab.groupby('AÑO_MES_SOLICITUD').size().reset_index(name='CANTIDAD_SOLICITUDES')
-            df_rem_mensual = df_rem_mensual[df_rem_mensual['AÑO_MES_SOLICITUD'] != ''].sort_values('AÑO_MES_SOLICITUD')
-
-            fig_rem_bar = px.bar(
-                df_rem_mensual, x='AÑO_MES_SOLICITUD', y='CANTIDAD_SOLICITUDES', text='CANTIDAD_SOLICITUDES',
-                title="Conteo de Remesas por Mes de Solicitud",
-                labels={'AÑO_MES_SOLICITUD': 'Mes de Solicitud', 'CANTIDAD_SOLICITUDES': 'N° de Solicitudes'},
-                color_discrete_sequence=['#0D9488']
-            )
-            fig_rem_bar.update_traces(texttemplate='%{text:,} Ops', textposition='outside')
-            fig_rem_bar.update_layout(height=450, xaxis_tickangle=-45, template="plotly_white")
-            st.plotly_chart(fig_rem_bar, use_container_width=True)
-        else:
-            st.info("No hay remesas registradas para los filtros seleccionados.")
-
     with col_r2:
         if not df_rem_tab.empty:
             df_est = df_rem_tab.groupby('ESTADO').size().reset_index(name='CANTIDAD')
@@ -415,7 +442,7 @@ with tab2:
                 color_discrete_sequence=px.colors.qualitative.Set2
             )
             fig_pie_est.update_traces(textinfo='value+percent')
-            fig_pie_est.update_layout(height=450, template="plotly_white")
+            fig_pie_est.update_layout(height=400, template="plotly_white")
             st.plotly_chart(fig_pie_est, use_container_width=True)
 
 with tab3:
@@ -471,7 +498,6 @@ with tab4:
         0.0
     )
 
-    # Ordenamiento estricto: 1° % Cumplimiento Ops, 2° % Cumplimiento Monto (descendentes)
     df_reporte = df_reporte.sort_values(by=['% Cumplimiento Ops', '% Cumplimiento Monto'], ascending=[False, False]).reset_index(drop=True)
 
     df_reporte_final = df_reporte[[
@@ -490,11 +516,11 @@ with tab4:
     if not df_reporte_final.empty:
         def color_semaforo(val):
             if val < 80.0:
-                return 'background-color: #FEE2E2; color: #991B1B; font-weight: bold;' # Rojo (menos de 80%)
+                return 'background-color: #FEE2E2; color: #991B1B; font-weight: bold;'
             elif val < 100.0:
-                return 'background-color: #FEF3C7; color: #92400E; font-weight: bold;' # Amarillo tenue (80% al 99%)
+                return 'background-color: #FEF3C7; color: #92400E; font-weight: bold;'
             else:
-                return 'background-color: #DCFCE7; color: #166534; font-weight: bold;' # Verde (100% a más)
+                return 'background-color: #DCFCE7; color: #166534; font-weight: bold;'
 
         styled_reporte = df_reporte_final.style.map(
             color_semaforo, subset=['% Cumplimiento Ops', '% Cumplimiento Monto']
