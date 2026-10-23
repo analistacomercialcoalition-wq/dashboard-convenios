@@ -108,15 +108,15 @@ def cargar_datos_corporativos():
 
     df['MES_DESEMBOLSO_NUM'] = dt_des.dt.month.fillna(0).astype(int)
 
-    # Identificar columna DNI de Hoja 1 (Columna V / índice 21 o por nombre)
+    # Identificar columna DNI de Hoja 1 (Columna V / índice 21 o por nombre) con protección contra nulos
     if len(df.columns) > 21:
         col_v_nombre = df.columns[21]
-        df['DNI_HOJA1'] = df[col_v_nombre].astype(str).str.strip()
+        df['DNI_HOJA1'] = df[col_v_nombre].fillna('').astype(str).str.strip()
     else:
         cols_dni_h1 = [c for c in df.columns if 'DNI' in c.upper()]
-        df['DNI_HOJA1'] = df[cols_dni_h1[0]].astype(str).str.strip() if cols_dni_h1 else ''
+        df['DNI_HOJA1'] = df[cols_dni_h1[0]].fillna('').astype(str).str.strip() if cols_dni_h1 else ''
     
-    df['DNI_HOJA1'] = df['DNI_HOJA1'].apply(lambda x: x.zfill(8) if x.isdigit() and len(x) < 8 else x)
+    df['DNI_HOJA1'] = df['DNI_HOJA1'].apply(lambda x: x.zfill(8) if x and x.isdigit() and len(x) < 8 else x)
 
     cols_id = [c for c in df.columns if any(k in c.upper() for k in ['EXPEDIE', 'DNI', 'CREDITO', 'OPERACION'])]
     df['ID_UNICO'] = df[cols_id[0]].astype(str).str.strip() if cols_id else df.index.astype(str)
@@ -128,7 +128,7 @@ def cargar_datos_corporativos():
         df_dotacion = pd.read_csv(sheet_url_dotacion, dtype=str)
         df_dotacion.columns = df_dotacion.columns.astype(str).str.strip()
         
-        # Limpieza y estandarización de columnas para filtros
+        # Limpieza y estandarización de columnas
         for c in df_dotacion.columns:
             df_dotacion[c] = df_dotacion[c].fillna('').astype(str).str.strip()
             if c.upper() in ['TERRITORIAL', 'ZONA', 'PLAZA', 'JEFE ZONAL', 'SUPERVISOR', 'ASESOR CORRECTO', 'ESTADO']:
@@ -768,7 +768,7 @@ with tab6:
     if df_dotacion is not None and not df_dotacion.empty:
         df_dot_flt = df_dotacion.copy()
         
-        # 1. Retirar columnas no deseadas: ss, q(cese), mes cese, filtro
+        # 1. Retirar columnas no deseadas: SS, Q(CESE), MES CESE, FILTRO
         cols_a_retirar = ['SS', 'Q(CESE)', 'Q (CESE)', 'MES CESE', 'FILTRO']
         cols_mantener_dot = [c for c in df_dot_flt.columns if c.upper() not in cols_a_retirar]
         df_dot_flt = df_dot_flt[cols_mantener_dot].copy()
