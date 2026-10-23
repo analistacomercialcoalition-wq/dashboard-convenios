@@ -6,7 +6,6 @@ import plotly.graph_objects as go
 import os
 import urllib.parse
 
-# Configuración de página corporativa
 st.set_page_config(
     page_title="Dashboard Gerencial & Modelo Predictivo | Coalition Convenios",
     page_icon="🦁",
@@ -14,56 +13,22 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# ==========================================
-# ESTILOS CSS PERSONALIZADOS
-# ==========================================
 st.markdown("""
     <style>
-        .stApp {
-            background-color: #FFFFFF;
-            color: #0F172A;
-        }
-        [data-testid="stSidebar"] {
-            background-color: #0F172A !important;
-            color: #FFFFFF !important;
-        }
-        [data-testid="stSidebar"] h1, 
-        [data-testid="stSidebar"] h2, 
-        [data-testid="stSidebar"] h3, 
-        [data-testid="stSidebar"] label, 
-        [data-testid="stSidebar"] .stMarkdown {
-            color: #F8FAFC !important;
-        }
-        [data-testid="stSidebar"] div[data-baseweb="select"] > div {
-            background-color: #1E293B !important;
-            color: #FFFFFF !important;
-            border-color: #334155 !important;
-        }
-        div[data-testid="stMetricValue"] {
-            font-size: 1.6rem !important;
-            white-space: nowrap !important;
-            color: #0F172A !important;
-            font-weight: 700 !important;
-        }
-        h1, h2, h3 {
-            color: #0F172A !important;
-            font-weight: 800 !important;
-        }
-        hr {
-            border-color: #CBD5E1 !important;
-        }
+        .stApp { background-color: #FFFFFF; color: #0F172A; }
+        [data-testid="stSidebar"] { background-color: #0F172A !important; color: #FFFFFF !important; }
+        [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3, 
+        [data-testid="stSidebar"] label, [data-testid="stSidebar"] .stMarkdown { color: #F8FAFC !important; }
+        [data-testid="stSidebar"] div[data-baseweb="select"] > div { background-color: #1E293B !important; color: #FFFFFF !important; border-color: #334155 !important; }
+        div[data-testid="stMetricValue"] { font-size: 1.6rem !important; white-space: nowrap !important; color: #0F172A !important; font-weight: 700 !important; }
+        h1, h2, h3 { color: #0F172A !important; font-weight: 800 !important; }
+        hr { border-color: #CBD5E1 !important; }
     </style>
 """, unsafe_allow_html=True)
 
-# ==========================================
-# DETECCIÓN DE IMAGEN LOGO CORPORATIVO
-# ==========================================
 posibles_logos = ["Convenios Coalition.png", "Convenios Coalition.jpg", "logo.png", "logo.jpg"]
 logo_encontrado = next((img for img in posibles_logos if os.path.exists(img)), None)
 
-# ==========================================
-# SISTEMA DE LOGIN DE PÁGINA COMPLETA
-# ==========================================
 if 'autenticado' not in st.session_state:
     st.session_state.autenticado = False
 if 'usuario_correo' not in st.session_state:
@@ -79,7 +44,6 @@ CREDENCIALES_USUARIOS = {
 if not st.session_state.autenticado:
     st.markdown("<br><br>", unsafe_allow_html=True)
     col_login_a, col_login_b, col_login_c = st.columns([1, 2, 1])
-    
     with col_login_b:
         st.markdown("""
             <div style="text-align: center; background-color: #0F172A; padding: 30px; border-radius: 15px; box-shadow: 0px 4px 15px rgba(0,0,0,0.2);">
@@ -88,13 +52,11 @@ if not st.session_state.autenticado:
             </div>
         """, unsafe_allow_html=True)
         st.markdown("<br>", unsafe_allow_html=True)
-        
         with st.form("form_login"):
             st.subheader("🔐 Iniciar Sesión en el Sistema")
             input_correo = st.text_input("Correo Corporativo:", value="").strip().lower()
             input_pass = st.text_input("Contraseña:", type="password", value="").strip()
             btn_ingresar = st.form_submit_button("🚀 Ingresar al Dashboard", use_container_width=True)
-            
             if btn_ingresar:
                 usuario_info = CREDENCIALES_USUARIOS.get(input_correo, None)
                 if usuario_info and usuario_info["password"] == input_pass:
@@ -106,31 +68,25 @@ if not st.session_state.autenticado:
                     st.error("⚠️ Correo o contraseña incorrectos. Verifique sus credenciales.")
     st.stop()
 
-# ==========================================
-# CARGA Y LIMPIEZA BLINDADA DE DATOS
-# ==========================================
 @st.cache_data(ttl=60)
 def cargar_datos_corporativos():
     base_id = "1IBvyIN5H1jYrwEAOD9E5nTCpaBLqxD109HMKCW0Ezt8"
     
-    # 1. Matriz Principal de Operaciones (Hoja 1)
+    # 1. Matriz Principal
     sheet_url_hoja1 = f"https://docs.google.com/spreadsheets/d/{base_id}/gviz/tq?tqx=out:csv&sheet=Hoja%201"
     df = pd.read_csv(sheet_url_hoja1, dtype=str)
     df.columns = df.columns.astype(str).str.strip()
     
-    # Limpieza de NETO
     df['NETO'] = pd.to_numeric(
         df['NETO'].astype(str).str.replace(',', '').str.replace('S/', '').str.replace(' ', '').str.strip(), 
         errors='coerce'
     ).fillna(0)
 
-    # Limpieza de textos
     cols_a_limpiar = ['TERRITORIAL', 'ZONA', 'PLAZA', 'JEFE ZONAL', 'SUPERVISOR', 'ASESOR CORRECTO', 'ESTADO']
     for col in cols_a_limpiar:
         if col in df.columns:
             df[col] = df[col].fillna('').astype(str).str.strip().str.upper()
 
-    # Parseo de Fecha de Solicitud
     col_sol = [c for c in df.columns if 'SOLICITUD' in c.upper()][0]
     df['FECHA_SOLICITUD_DT'] = pd.to_datetime(df[col_sol], format='%d/%m/%Y', errors='coerce')
     mask_null_sol = df['FECHA_SOLICITUD_DT'].isna() & (df[col_sol] != '')
@@ -140,7 +96,6 @@ def cargar_datos_corporativos():
         )
     df['AÑO_MES_SOLICITUD'] = df['FECHA_SOLICITUD_DT'].dt.to_period('M').astype(str)
 
-    # Parseo de Fecha de Desembolso
     col_des = [c for c in df.columns if 'DESEMBOLSO' in c.upper()][0]
     df['FECHA_DESEMBOLSO_DT'] = pd.to_datetime(df[col_des], format='%d/%m/%Y', errors='coerce')
     mask_null_des = df['FECHA_DESEMBOLSO_DT'].isna() & (df[col_des] != '')
@@ -152,12 +107,11 @@ def cargar_datos_corporativos():
     df['MES_DESEMBOLSO_NUM'] = df['FECHA_DESEMBOLSO_DT'].dt.month
 
     df = df[df['FECHA_SOLICITUD_DT'].notna()]
-    
     cols_id = [c for c in df.columns if any(k in c.upper() for k in ['EXPEDIE', 'DNI', 'CREDITO', 'OPERACION'])]
     df['ID_UNICO'] = df[cols_id[0]].astype(str).str.strip() if cols_id else df.index.astype(str)
     df = df.drop_duplicates(subset=['ID_UNICO', 'AÑO_MES_SOLICITUD'], keep='first')
 
-    # TABLA OFICIAL DE METAS POR SUPERVISOR
+    # Metas oficiales
     datos_metas = [
         ["PAOLA PEREZ", "ACTIVO", "LIMA", "FLAVIA LAURA", "CECILIA LOPEZ", 28, 1290000],
         ["FRANK SANTAMARIA", "ACTIVO", "JAEN", "JOSE VALDIVIEZO", "CECILIA LOPEZ", 20, 950000],
@@ -240,7 +194,7 @@ def cargar_datos_corporativos():
     for c in ['SUPERVISOR', 'ESTADO_SUP', 'PLAZA', 'JEFE ZONAL', 'TERRITORIAL']:
         df_metas_oficial[c] = df_metas_oficial[c].astype(str).str.strip().str.upper()
 
-    # 3. LECTURA PROTEGIDA DE DOTACIÓN
+    # 3. Dotación con respaldo a prueba de fallos
     df_dotacion = pd.DataFrame()
     posibles_urls = [
         f"https://docs.google.com/spreadsheets/d/{base_id}/gviz/tq?tqx=out:csv&sheet=DOTACION",
@@ -259,7 +213,7 @@ def cargar_datos_corporativos():
     if df_dotacion is not None and not df_dotacion.empty:
         df_dotacion.columns = df_dotacion.columns.astype(str).str.strip()
         for col in df_dotacion.columns:
-            df_dotacion[col] = df_dotacion[col].astype(str).replace(['nan', 'None', 'NAT', 'NaN'], '').str.strip().str.upper()
+            df_dotacion[col] = df_dotacion[col].fillna('').astype(str).str.strip().str.upper()
     else:
         df_dotacion = pd.DataFrame(columns=['DNI', 'PROMOTOR', 'ESTADO', 'SUPERVISOR', 'JEFE ZONAL', 'PLAZA'])
 
@@ -268,17 +222,12 @@ def cargar_datos_corporativos():
 with st.spinner("Sincronizando matriz corporativa Coalition y Dotación..."):
     df_base, df_metas_oficial, df_dotacion = cargar_datos_corporativos()
 
-# ==========================================
-# HEADER EJECUTIVO DEL DASHBOARD
-# ==========================================
 col_logo, col_tit = st.columns([1, 5])
-
 with col_logo:
     if logo_encontrado:
         st.image(logo_encontrado, width=130)
     else:
         st.markdown("## 🦁")
-
 with col_tit:
     st.title("CONVENIOS COALITION")
     st.markdown("##### **Matriz Gerencial de Colocaciones, Remesas, Dotación y Modelo Predictivo Estacional**")
@@ -291,9 +240,6 @@ def obtener_opciones_limpias(df_in, col_name):
         return elementos
     return []
 
-# ==========================================
-# NAVEGACIÓN Y ESTRUCTURA BARRA LATERAL
-# ==========================================
 if logo_encontrado:
     st.sidebar.image(logo_encontrado, use_column_width=True)
 
@@ -355,9 +301,6 @@ if sel_asesor != "TODOS" and 'ASESOR CORRECTO' in df_flt_sidebar.columns:
 
 df_flt = df_flt_sidebar.copy()
 
-# ==========================================
-# FILTROS SUPERIORES TEMPORALES
-# ==========================================
 st.markdown("### 🎛️ Controles Temporales y Estado Operativo")
 f_col1, f_col2, f_col3 = st.columns(3)
 
@@ -423,9 +366,6 @@ df_mensual = df_flt_prod.groupby('AÑO_MES_DESEMBOLSO').agg(
     OPERACIONES=('NETO', 'count')
 ).reset_index() if not df_flt_prod.empty else pd.DataFrame()
 
-# ==========================================
-# ESTRUCTURA DE 6 PESTAÑAS DEL DASHBOARD
-# ==========================================
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "📊 Producción Total por Mes", 
     "📦 Remesas (Volumen por Fecha de Solicitud)", 
@@ -439,10 +379,7 @@ with tab1:
     st.subheader("💵 Monto Neto Total Desembolsado por Periodo")
     if not df_mensual.empty:
         fig_bar = px.bar(
-            df_mensual, 
-            x='AÑO_MES_DESEMBOLSO', 
-            y='MONTO_TOTAL_NETO',
-            text='MONTO_TOTAL_NETO',
+            df_mensual, x='AÑO_MES_DESEMBOLSO', y='MONTO_TOTAL_NETO', text='MONTO_TOTAL_NETO',
             title="Evolución del Monto Neto Total Desembolsado (S/)",
             labels={'AÑO_MES_DESEMBOLSO': 'Periodo Desembolso', 'MONTO_TOTAL_NETO': 'Monto Total Neto (S/)'},
             color_discrete_sequence=['#0F172A']
@@ -482,10 +419,7 @@ with tab2:
             df_rem_mensual = df_rem_mensual[df_rem_mensual['AÑO_MES_SOLICITUD'] != 'NaT'].sort_values('AÑO_MES_SOLICITUD')
 
             fig_rem_bar = px.bar(
-                df_rem_mensual,
-                x='AÑO_MES_SOLICITUD',
-                y='CANTIDAD_SOLICITUDES',
-                text='CANTIDAD_SOLICITUDES',
+                df_rem_mensual, x='AÑO_MES_SOLICITUD', y='CANTIDAD_SOLICITUDES', text='CANTIDAD_SOLICITUDES',
                 title="Conteo de Remesas por Mes de Solicitud",
                 labels={'AÑO_MES_SOLICITUD': 'Mes de Solicitud', 'CANTIDAD_SOLICITUDES': 'N° de Solicitudes'},
                 color_discrete_sequence=['#0D9488']
@@ -595,8 +529,6 @@ with tab4:
 
 with tab5:
     st.subheader("👥 Dotación Comercial y Producción Mensual por Asesor (S/ Netos)")
-    st.markdown("Matriz de dotación con consolidación de **Monto Neto Desembolsado** de **Enero a Octubre** y cálculo de **Promedio Mensual**.")
-
     if not df_dotacion.empty:
         df_dot_flt = df_dotacion.copy()
         cols_dot = {str(c).upper(): c for c in df_dot_flt.columns}
@@ -643,22 +575,17 @@ with tab5:
                 pivot_prod[nom_m] = 0.0
 
         col_asesor_key = col_dot_a if col_dot_a else df_dot_flt.columns[0]
-
-        df_dot_unida = pd.merge(
-            df_dot_flt, pivot_prod, left_on=col_asesor_key, right_on='ASESOR CORRECTO', how='left'
-        )
+        df_dot_unida = pd.merge(df_dot_flt, pivot_prod, left_on=col_asesor_key, right_on='ASESOR CORRECTO', how='left')
 
         cols_meses_lista = list(nombres_meses.values())
         for c in cols_meses_lista:
             df_dot_unida[c] = df_dot_unida[c].fillna(0.0)
 
         df_dot_unida['Promedio Mensual (S/)'] = df_dot_unida[cols_meses_lista].mean(axis=1)
-
         if 'ASESOR CORRECTO' in df_dot_unida.columns and col_asesor_key != 'ASESOR CORRECTO':
             df_dot_unida = df_dot_unida.drop(columns=['ASESOR CORRECTO'])
 
         df_dot_unida = df_dot_unida.sort_values('Promedio Mensual (S/)', ascending=False).reset_index(drop=True)
-
         formatos_dict = {c: formato_compacto_limpio for c in cols_meses_lista}
         formatos_dict['Promedio Mensual (S/)'] = formato_compacto_limpio
 
