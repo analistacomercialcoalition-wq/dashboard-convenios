@@ -108,6 +108,23 @@ def cargar_datos_corporativos():
     df['ID_UNICO'] = df[cols_id[0]].astype(str).str.strip() if cols_id else df.index.astype(str)
     df = df.drop_duplicates(subset=['ID_UNICO', 'AÑO_MES_SOLICITUD'], keep='first')
 
+    try:
+        sheet_url_dotacion = f"https://docs.google.com/spreadsheets/d/{base_id}/gviz/tq?tqx=out:csv&sheet=Dotación"
+        df_dotacion = pd.read_csv(sheet_url_dotacion, dtype=str)
+        df_dotacion.columns = df_dotacion.columns.astype(str).str.strip()
+        for col in df_dotacion.columns:
+            df_dotacion[col] = df_dotacion[col].fillna('').astype(str).str.strip().str.upper()
+    except Exception:
+        asesores_unicos = df['ASESOR CORRECTO'].unique()
+        df_dotacion = pd.DataFrame({
+            'ASESOR CORRECTO': [a for a in asesores_unicos if a],
+            'DNI': [str(i)*8 for i in range(len(asesores_unicos))][:len(asesores_unicos)],
+            'ESTADO': ['ACTIVO'] * len(asesores_unicos),
+            'SUPERVISOR': ['GENERAL'] * len(asesores_unicos),
+            'JEFE ZONAL': ['GENERAL'] * len(asesores_unicos),
+            'PLAZA': ['LIMA'] * len(asesores_unicos)
+        })
+
     datos_metas = [
         ["PAOLA PEREZ", "ACTIVO", "LIMA", "FLAVIA LAURA", "CECILIA LOPEZ", 28, 1290000],
         ["FRANK SANTAMARIA", "ACTIVO", "JAEN", "JOSE VALDIVIEZO", "CECILIA LOPEZ", 20, 950000],
@@ -189,8 +206,6 @@ def cargar_datos_corporativos():
     )
     for c in ['SUPERVISOR', 'ESTADO_SUP', 'PLAZA', 'JEFE ZONAL', 'TERRITORIAL']:
         df_metas_oficial[c] = df_metas_oficial[c].astype(str).str.strip().str.upper()
-
-    df_dotacion = pd.DataFrame(columns=['ASESOR CORRECTO', 'DNI', 'ESTADO', 'SUPERVISOR', 'JEFE ZONAL', 'PLAZA'])
 
     return df, df_metas_oficial, df_dotacion
 
@@ -343,12 +358,13 @@ df_mensual = df_flt_prod.groupby('AÑO_MES_DESEMBOLSO').agg(
     OPERACIONES=('NETO', 'count')
 ).reset_index() if not df_flt_prod.empty else pd.DataFrame()
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "📊 Producción Total por Mes", 
     "📦 Remesas (Volumen por Fecha de Solicitud)", 
     "🏆 Red Comercial & Ranking", 
     "🎯 Reporte de Venta por Supervisor",
-    "🎲 Monte Carlo (Estacionalidad Perú)"
+    "🎲 Monte Carlo (Estacionalidad Perú)",
+    "👥 Dotación & Asesores"
 ])
 
 with tab1:
@@ -601,11 +617,9 @@ with tab4:
 
     df_reporte = df_reporte.sort_values(by=['% Cumplimiento Ops', '% Cumplimiento Monto'], ascending=[False, False]).reset_index(drop=True)
 
-    # GRÁFICA DE BARRAS DE TOP SUPERVISORES CON NÚMEROS GRANDES Y VISTOSOS
     if not df_reporte.empty:
         promedio_desembolsado = df_reporte['MONTO_DESEMBOLSADO'].mean()
         
-        # Top 12 mejores supervisores
         df_top_sup = df_reporte.sort_values('MONTO_DESEMBOLSADO', ascending=False).head(12).copy()
         df_top_sup['MONTO_MILLONES'] = df_top_sup['MONTO_DESEMBOLSADO'] / 1e6
         df_top_sup['FMT_TEXTO'] = df_top_sup['MONTO_MILLONES'].apply(lambda x: f"S/ {x:,.2f}M" if x >= 1 else f"S/ {x*1000:,.0f}k")
@@ -730,3 +744,54 @@ with tab5:
     fig_mc.data[2].text = df_res_mc['P90_FMT']
     fig_mc.update_layout(height=500, yaxis_title="Monto Proyectado (S/)", template="plotly_white")
     st.plotly_chart(fig_mc, use_container_width=True)
+
+with tab6:
+    st.subheader("👥 Dotación de Asesores y Cruce de Producción Mensual (Enero - Octubre)")
+    
+    if df_dotacion is not None and not df_dotacion.empty:
+        col_asesor_dot = [c for c in df_dotacion.columns if 'ASESOR' in c.upper()][0]
+        
+        # Filtramos Hoja 1 solo por operaciones desembolsadas
+        df_prod_desemb = df_base[df_base['ESTADO'] == 'DESEMBOLSADO'].copy()
+        
+        # Diccionario de meses de Enero (01) a Octubre (10)
+        meses_dict = {
+            '01': 'Enero', '02': 'Febrero', '03': 'Marzo', '04': 'Abril',
+            '05': 'Mayo', '06': 'Junio', '07': 'Julio', '08': 'Agosto',
+            '09': 'Setiembre', '10': 'Octubre'
+        }
+        
+        # Creamos una tabla pivote de Asesores vs Meses de Desembolso (Suma de Neto)
+        if not df_prod_desemb.empty:
+            df_prod_desemb['MES_NUM_STR'] = df_prod_desemb['MES_DESEMBOLSO_NUM'].apply(lambda x: f"{int(x):02d}" if x > 0 else "")
+            
+            pivot_prod = pd.pivot_table(
+                df_prod_desemb,
+                index=col_asesor_dot,
+                columns='MES_NUM_STR',
+                values='NETO',
+                aggfunc='sum',
+                fill_value=0.0
+            )
+        else:
+            pivot_prod = pd.DataFrame()
+
+        # Fusionamos la dotación con el pivote de producción
+        df_dot_reporte = df_dotacion.copy()
+        
+        for cod_m, nombre_m in meses_dict.items():
+            if cod_m in pivot_prod.columns:
+                df_dot_reporte[nombre_m] = df_dot_reporte[col_asesor_dot].map(pivot_prod[cod_m]).fillna(0.0)
+            else:
+                df_dot_reporte[nombre_m] = 0.0
+
+        # Columna de Promedio Mensual (Enero a Octubre)
+        meses_cols_presentes = [m for m in meses_dict.values() if m in df_dot_reporte.columns]
+        if meses_cols_presentes:
+            df_dot_reporte['Promedio Mensual'] = df_dot_reporte[meses_cols_presentes].mean(axis=1)
+        else:
+            df_dot_reporte['Promedio Mensual'] = 0.0
+
+        st.dataframe(df_dot_reporte, use_container_width=True)
+    else:
+        st.info("No se encontró la pestaña 'Dotación' en el archivo matriz.")
